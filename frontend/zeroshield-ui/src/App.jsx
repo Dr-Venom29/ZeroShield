@@ -11,14 +11,21 @@ import {
 } from "recharts";
 import "./index.css";
 
-const socket = io("http://127.0.0.1:5000");
+const socket = io("http://127.0.0.1:5000", {
+  transports: ["websocket", "polling"],
+});
 
 export default function App() {
   const [data, setData] = useState(null);
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
+    socket.on("connect", () => {
+      console.log("✅ Connected to backend socket:", socket.id);
+    });
+
     socket.on("update", (incoming) => {
+      console.log("📡 Incoming live update:", incoming);
       setData(incoming);
       setHistory((prev) => {
         const updated = [...prev, incoming];
@@ -26,8 +33,14 @@ export default function App() {
       });
     });
 
+    socket.on("disconnect", () => {
+      console.log("❌ Socket disconnected");
+    });
+
     return () => {
+      socket.off("connect");
       socket.off("update");
+      socket.off("disconnect");
     };
   }, []);
 

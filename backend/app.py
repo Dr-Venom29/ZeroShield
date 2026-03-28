@@ -6,7 +6,13 @@ import time
 import pandas as pd
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode="eventlet",
+    logger=True,
+    engineio_logger=True
+)
 
 # Load trained model
 with open("model.pkl", "rb") as f:
@@ -50,7 +56,6 @@ def generate_attack_data():
 
 
 def detect(metrics):
-    # Use DataFrame with proper feature names to match training
     features = pd.DataFrame([{
         "cpu": metrics["cpu"],
         "ram": metrics["ram"],
@@ -61,7 +66,6 @@ def detect(metrics):
 
     prediction = model.predict(features)[0]
 
-    # Simulated threat score based on anomaly result
     if prediction == -1:
         anomaly_score = random.randint(70, 98)
     else:
@@ -117,7 +121,12 @@ def health():
 
 @socketio.on("connect")
 def handle_connect():
-    print("Client connected")
+    print("✅ Client connected")
+
+    # Send one immediate update so frontend doesn't stay stuck loading
+    metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
+    result = detect(metrics)
+    socketio.emit("update", result)
 
 
 def background_stream():
@@ -130,4 +139,4 @@ def background_stream():
 
 if __name__ == "__main__":
     socketio.start_background_task(background_stream)
-    socketio.run(app, debug=True)
+    socketio.run(app, host="127.0.0.1", port=5000, debug=True)
