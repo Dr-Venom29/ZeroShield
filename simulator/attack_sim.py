@@ -2,30 +2,42 @@ import numpy as np
 import pandas as pd
 import os
 
-BASELINE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "baseline.csv")
+BASELINE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "data",
+    "baseline.csv"
+)
 
 
-def generate_attack_samples(n=10, noise_scale=0.5):
+def generate_attack_samples(n=10):
     base = pd.read_csv(BASELINE_PATH)
-    feature_cols = [c for c in base.columns if c != "label"]
 
-    benign = base[base["label"] == 0]
-    if benign.empty:
-        raise ValueError("baseline.csv must contain some benign samples (label == 0)")
+    expected_cols = [
+        "cpu",
+        "ram",
+        "requests_per_sec",
+        "failed_logins",
+        "response_time"
+    ]
 
-    benign_features = benign[feature_cols].values
+    for col in expected_cols:
+        if col not in base.columns:
+            raise ValueError(f"Missing column in baseline.csv: {col}")
 
-    idx = np.random.choice(len(benign_features), size=n, replace=True)
-    sampled = benign_features[idx]
+    sampled = base.sample(n=n, replace=True).copy()
 
-    noise = np.random.normal(scale=noise_scale, size=sampled.shape)
-    attacks = sampled + noise
+    # Create realistic attack spikes
+    sampled["cpu"] = np.clip(sampled["cpu"] * np.random.uniform(3, 5, n), 0, 100)
+    sampled["ram"] = np.clip(sampled["ram"] * np.random.uniform(2, 3, n), 0, 100)
+    sampled["requests_per_sec"] *= np.random.randint(5, 15, n)
+    sampled["failed_logins"] += np.random.randint(5, 20, n)
+    sampled["response_time"] *= np.random.uniform(3, 6, n)
 
-    df_attacks = pd.DataFrame(attacks, columns=feature_cols)
-    df_attacks["label"] = 1
-    return df_attacks
+    sampled["label"] = 1
+
+    return sampled
 
 
 if __name__ == "__main__":
     attacks = generate_attack_samples(5)
-    print(attacks.head())
+    print(attacks)

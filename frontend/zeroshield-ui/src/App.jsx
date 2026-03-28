@@ -108,7 +108,10 @@ export default function App() {
               <MetricCard label="RAM" value={`${data.ram}%`} />
               <MetricCard label="Req/Sec" value={data.requests_per_sec} />
               <MetricCard label="Failed Logins" value={data.failed_logins} />
-              <MetricCard label="Response Time" value={`${data.response_time} ms`} />
+              <MetricCard
+                label="Response Time"
+                value={`${data.response_time} ms`}
+              />
             </div>
           </section>
 

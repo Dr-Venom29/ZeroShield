@@ -4,6 +4,12 @@ import pickle
 import random
 import time
 import pandas as pd
+import os
+import sys
+
+# Allow importing from simulator folder
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from simulator.attack_sim import generate_attack_samples
 
 app = Flask(__name__)
 socketio = SocketIO(
@@ -15,7 +21,8 @@ socketio = SocketIO(
 )
 
 # Load trained model
-with open("model.pkl", "rb") as f:
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
+with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)
 
 # Store live history
@@ -23,6 +30,9 @@ history = []
 
 # Attack mode flag
 attack_mode = {"enabled": False}
+
+# Attack sample buffer
+attack_buffer = []
 
 
 def get_confidence_tier(score):
@@ -46,13 +56,18 @@ def generate_normal_data():
 
 
 def generate_attack_data():
-    return {
-        "cpu": random.randint(80, 95),
-        "ram": random.randint(85, 98),
-        "requests_per_sec": random.randint(100, 250),
-        "failed_logins": random.randint(8, 20),
-        "response_time": random.randint(400, 900)
-    }
+    global attack_buffer
+
+    if not attack_buffer:
+        df_attacks = generate_attack_samples(10)
+
+        # Drop label before using in detector
+        if "label" in df_attacks.columns:
+            df_attacks = df_attacks.drop(columns=["label"])
+
+        attack_buffer = df_attacks.to_dict(orient="records")
+
+    return attack_buffer.pop(0)
 
 
 def detect(metrics):
@@ -66,6 +81,7 @@ def detect(metrics):
 
     prediction = model.predict(features)[0]
 
+    # Simulated threat score based on anomaly result
     if prediction == -1:
         anomaly_score = random.randint(70, 98)
     else:
@@ -100,7 +116,9 @@ def get_history():
 
 @app.route("/simulate-attack")
 def simulate_attack():
+    global attack_buffer
     attack_mode["enabled"] = True
+    attack_buffer = []  # Reset attack buffer for fresh attack sequence
     return jsonify({"message": "🚨 Attack simulation started!"})
 
 
@@ -121,9 +139,7 @@ def health():
 
 @socketio.on("connect")
 def handle_connect():
-    print("✅ Client connected")
-
-    # Send one immediate update so frontend doesn't stay stuck loading
+    print("Client connected")
     metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
     result = detect(metrics)
     socketio.emit("update", result)
@@ -139,4 +155,4 @@ def background_stream():
 
 if __name__ == "__main__":
     socketio.start_background_task(background_stream)
-    socketio.run(app, host="127.0.0.1", port=5000, debug=True)
+    socketio.run(app, debug=True)
