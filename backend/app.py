@@ -1,11 +1,12 @@
 from flask import Flask, jsonify
 from flask_socketio import SocketIO
 import pickle
-import random
 import time
 import pandas as pd
 import os
 import sys
+import psutil
+import random
 
 # Allow importing from simulator folder
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -17,76 +18,151 @@ app.config["SECRET_KEY"] = "zeroshield-secret"
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="eventlet"
+    async_mode="eventlet",
 )
 
-# Load trained model
+# Load trained model + metadata
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
 with open(MODEL_PATH, "rb") as f:
-    model = pickle.load(f)
+    saved = pickle.load(f)
 
+model = saved["model"]
+threshold = saved["threshold"]
+baseline_min = saved["baseline_min"]
+baseline_max = saved["baseline_max"]
+mean_score = saved.get("mean", 0.0)
+std_score = saved.get("std", 0.05)
+
+# Runtime state
 history = []
+isolation_log = []
 attack_mode = {"enabled": False}
 attack_buffer = []
+C_VALUE = {"val": 1.5}
+isolated_state = {"active": False}
 
 
 def get_confidence_tier(score):
-    if score >= 80:
+    if score >= 85:
         return "HIGH"
     elif score >= 60:
         return "MEDIUM"
-    elif score >= 40:
+    elif score >= 35:
         return "LOW"
     return "NORMAL"
 
 
 def generate_normal_data():
+    cpu = psutil.cpu_percent(interval=0.5)
+    ram = psutil.virtual_memory().percent
+
     return {
-        "cpu": random.randint(18, 25),
-        "ram": random.randint(40, 47),
-        "requests_per_sec": random.randint(11, 17),
-        "failed_logins": random.randint(0, 1),
-        "response_time": random.randint(115, 140)
+        "workload_id": f"svc-{random.randint(1, 3)}",
+        "cpu": round(cpu, 2),
+        "ram": round(ram, 2),
+        "requests_per_sec": max(1, int(8 + (cpu / 100) * 15 + random.uniform(-2, 2))),
+        "failed_logins": random.choices([0, 1], weights=[95, 5])[0],
+        "response_time": max(80, int(110 + (ram / 100) * 80 + random.uniform(-10, 10))),
     }
 
 
 def generate_attack_data():
-    global attack_buffer
+    df = generate_attack_samples(1)
 
-    if not attack_buffer:
-        df_attacks = generate_attack_samples(10)
+    if "label" in df.columns:
+        df = df.drop(columns=["label"])
 
-        if "label" in df_attacks.columns:
-            df_attacks = df_attacks.drop(columns=["label"])
+    df["workload_id"] = [f"svc-{random.randint(1, 3)}"]
 
-        attack_buffer = df_attacks.to_dict(orient="records")
+    return df.to_dict(orient="records")[0]
 
-    return attack_buffer.pop(0)
+
+def trigger_isolation(workload_id):
+    event = {
+        "workload_id": workload_id,
+        "time": time.strftime("%H:%M:%S"),
+        "status": "QUARANTINED",
+        "action": "Suspicious workload isolated"
+    }
+
+    isolation_log.append(event)
+    if len(isolation_log) > 20:
+        isolation_log.pop(0)
+
+    isolated_state["active"] = True
+    return event
 
 
 def detect(metrics):
-    features = pd.DataFrame([{
-        "cpu": metrics["cpu"],
-        "ram": metrics["ram"],
-        "requests_per_sec": metrics["requests_per_sec"],
-        "failed_logins": metrics["failed_logins"],
-        "response_time": metrics["response_time"]
-    }])
+    features = pd.DataFrame([
+        {
+            "cpu": metrics["cpu"],
+            "ram": metrics["ram"],
+            "requests_per_sec": metrics["requests_per_sec"],
+            "failed_logins": metrics["failed_logins"],
+            "response_time": metrics["response_time"],
+        }
+    ])
 
-    prediction = model.predict(features)[0]
+    raw_score = model.decision_function(features)[0]
 
-    if prediction == -1:
-        anomaly_score = random.randint(70, 98)
+    # Dynamic threshold using mean - C * std
+    dynamic_threshold = mean_score - (C_VALUE["val"] * std_score)
+
+    # Distance from threshold
+    delta = dynamic_threshold - raw_score
+
+    if delta <= 0:
+        # Normal zone (0–35)
+        anomaly_score = max(0, 35 - (abs(delta) / (std_score + 1e-8)) * 20)
     else:
-        anomaly_score = random.randint(5, 35)
+        # Attack zone — calibrated using std only
+        severity = delta / (std_score + 1e-8)
 
+        if severity < 0.5:
+            anomaly_score = 40 + severity * 20      # 40–50
+        elif severity < 1.0:
+            anomaly_score = 50 + (severity - 0.5) * 30   # 50–65
+        elif severity < 2.0:
+            anomaly_score = 65 + (severity - 1.0) * 20   # 65–85
+        elif severity < 3.0:
+            anomaly_score = 85 + (severity - 2.0) * 10   # 85–95
+        else:
+            anomaly_score = 95 + min((severity - 3.0) * 2, 5)  # cap 100
+
+    anomaly_score = round(max(0, min(100, anomaly_score)), 2)
     tier = get_confidence_tier(anomaly_score)
+
+    workload_id = metrics.get("workload_id", "svc-1")
+    isolation_status = "MONITORING"
+    response_action = "Monitoring only"
+    isolation_event = None
+
+    if tier == "HIGH":
+        isolation_status = "QUARANTINED"
+        response_action = "Quarantine triggered"
+
+        if not isolated_state["active"]:
+            isolation_event = trigger_isolation(workload_id)
+
+    elif isolated_state["active"] and tier in ["NORMAL", "LOW"]:
+        isolation_status = "RECOVERED"
+        response_action = "Recovered to monitoring state"
+        isolated_state["active"] = False
 
     result = {
         **metrics,
         "anomaly_score": anomaly_score,
         "tier": tier,
-        "timestamp": time.strftime("%H:%M:%S")
+        "timestamp": time.strftime("%H:%M:%S"),
+        "isolation_status": isolation_status,
+        "response_engine": {
+            "threat_detected": "YES" if tier in ["MEDIUM", "HIGH"] else "NO",
+            "confidence": tier,
+            "action": response_action,
+            "scope": workload_id,
+        },
+        "isolation_event": isolation_event,
     }
 
     history.append(result)
@@ -107,18 +183,31 @@ def get_history():
     return jsonify(history)
 
 
-@app.route("/simulate-attack")
+@app.route("/isolation-log")
+def get_isolation_log():
+    return jsonify(isolation_log)
+
+
+@app.route("/simulate-attack", methods=["POST"])
 def simulate_attack():
     global attack_buffer
     attack_mode["enabled"] = True
     attack_buffer = []
-    return jsonify({"message": "🚨 Attack simulation started!"})
+    isolated_state["active"] = False
+    return jsonify({"message": "Attack simulation started!"})
 
 
-@app.route("/stop-attack")
+@app.route("/stop-attack", methods=["POST"])
 def stop_attack():
     attack_mode["enabled"] = False
-    return jsonify({"message": "✅ Attack simulation stopped."})
+    isolated_state["active"] = False
+    return jsonify({"message": "Attack simulation stopped."})
+
+
+@app.route("/set-threshold/<float:c>", methods=["POST"])
+def set_threshold(c):
+    C_VALUE["val"] = round(c, 2)
+    return jsonify({"c_value": C_VALUE["val"]})
 
 
 @app.route("/health")
@@ -126,18 +215,20 @@ def health():
     return jsonify({
         "status": "ok",
         "attack_mode": attack_mode["enabled"],
-        "history_count": len(history)
+        "history_count": len(history),
+        "c_value": C_VALUE["val"],
+        "isolated": isolated_state["active"]
     })
 
 
 @socketio.on("connect")
 def handle_connect():
-    print("✅ Client connected")
+    print("Client connected")
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
-    print("❌ Client disconnected")
+    print("Client disconnected")
 
 
 def background_stream():

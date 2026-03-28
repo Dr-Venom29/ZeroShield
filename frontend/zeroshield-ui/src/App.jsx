@@ -10,6 +10,11 @@ import {
   CartesianGrid,
 } from "recharts";
 import "./index.css";
+import cpuIcon from "./assets/cpu.svg";
+import memoryIcon from "./assets/memory.svg";
+import requestIcon from "./assets/request.svg";
+import authIcon from "./assets/auth.svg";
+import serviceIcon from "./assets/service.svg";
 
 export default function App() {
   const [data, setData] = useState(null);
@@ -26,7 +31,7 @@ export default function App() {
         setData(latest);
         setHistory((prev) => [...prev, latest].slice(-20));
       } catch (err) {
-        console.error("❌ Failed to fetch initial status:", err);
+        console.error("Failed to fetch initial status:", err);
       }
     };
 
@@ -40,12 +45,12 @@ export default function App() {
     });
 
     socket.on("connect", () => {
-      console.log("✅ Connected:", socket.id);
+      console.log("Connected:", socket.id);
       setConnected(true);
     });
 
     socket.on("disconnect", () => {
-      console.log("❌ Disconnected");
+      console.log("Disconnected");
       setConnected(false);
     });
 
@@ -61,11 +66,15 @@ export default function App() {
   }, []);
 
   const triggerAttack = async () => {
-    await fetch("http://127.0.0.1:5000/simulate-attack");
+    await fetch("http://127.0.0.1:5000/simulate-attack", {
+      method: "POST",
+    });
   };
 
   const stopAttack = async () => {
-    await fetch("http://127.0.0.1:5000/stop-attack");
+    await fetch("http://127.0.0.1:5000/stop-attack", {
+      method: "POST",
+    });
   };
 
   const getTierColor = (tier) => {
@@ -81,11 +90,6 @@ export default function App() {
     }
   };
 
-  const getIsolationStatus = (score) => {
-    if (score == null) return "MONITORING";
-    return score > 85 ? "QUARANTINED" : "MONITORING";
-  };
-
   const getIsolationColor = (status) => {
     switch (status) {
       case "QUARANTINED":
@@ -98,14 +102,14 @@ export default function App() {
     }
   };
 
-  const getResponseSummary = (score, tier) => {
-    const highThreat = score != null && score > 85;
-    return {
-      status: highThreat ? "Threat detected" : "No active threat",
-      confidence: tier || "LOW",
-      action: highThreat ? "Quarantine triggered" : "Monitoring only",
-      scope: highThreat ? "Suspicious workload" : "All workloads",
-    };
+  const getResponseStateColor = (d) => {
+    if (!d) return "#00e676";
+    const tier = d.response_engine?.confidence || d.tier || "NORMAL";
+    const isolated = d.isolation_status === "QUARANTINED";
+
+    if (isolated || tier === "HIGH") return "#ff3b3b";
+    if (tier === "MEDIUM") return "#ff9800";
+    return "#00e676";
   };
 
   return (
@@ -122,19 +126,42 @@ export default function App() {
               fontWeight: "600",
             }}
           >
-            {connected ? "● Live Connected" : "● Disconnected"}
+            {connected ? "LIVE CONNECTED" : "DISCONNECTED"}
           </span>
         </div>
 
         <div className="controls">
           <button className="attack-btn" onClick={triggerAttack}>
-            🚨 Simulate Attack
+            Simulate Attack
           </button>
           <button className="stop-btn" onClick={stopAttack}>
-            ✅ Stop Attack
+            Stop Attack
           </button>
         </div>
       </header>
+
+      <div className="command-bar-wrapper">
+        <div className="command-bar">
+          <div className="command-item">
+            <span className="label">Environment</span>
+            <span className="value">CLOUD-SIMULATED</span>
+          </div>
+          <div className="command-item">
+            <span className="label">Cluster Status</span>
+            <span className="value">
+              {data?.tier === "HIGH" ? "DEGRADED" : "HEALTHY"}
+            </span>
+          </div>
+          <div className="command-item">
+            <span className="label">Active Workload</span>
+            <span className="value">{data?.workload_id || "svc-1"}</span>
+          </div>
+          <div className="command-item">
+            <span className="label">Detection Engine</span>
+            <span className="value">ONLINE</span>
+          </div>
+        </div>
+      </div>
 
       {!data ? (
         <div className="loading">Connecting to live threat feed...</div>
@@ -143,11 +170,12 @@ export default function App() {
           <section className="top-grid">
             <div className="score-card">
               <h2>Threat Score</h2>
+              <p className="subtle-label">Live Risk Index</p>
               <div
                 className="score"
                 style={{ color: getTierColor(data.tier) }}
               >
-                {data.anomaly_score}
+                {Math.round(data.anomaly_score)}
               </div>
               <span
                 className="tier-badge"
@@ -160,25 +188,24 @@ export default function App() {
             <div className="right-top-grid">
               <div className="isolation-card">
                 <h2>Workload Isolation Status</h2>
-                {(() => {
-                  const status = getIsolationStatus(data.anomaly_score);
-                  const color = getIsolationColor(status);
-                  return (
-                    <>
-                      <div
-                        className="isolation-status"
-                        style={{ color, borderColor: color }}
-                      >
-                        {status}
-                      </div>
-                      <p className="isolation-legend">
-                        MONITORING 
-                        <span className="dot">•</span> QUARANTINED 
-                        <span className="dot">•</span> RECOVERED
-                      </p>
-                    </>
-                  );
-                })()}
+                <p className="subtle-label">
+                  Target Workload: {data.workload_id}
+                </p>
+
+                <div
+                  className="isolation-status"
+                  style={{
+                    color: getIsolationColor(data.isolation_status),
+                    borderColor: getIsolationColor(data.isolation_status),
+                  }}
+                >
+                  {data.isolation_status}
+                </div>
+
+                <p className="isolation-legend">
+                  MONITORING <span className="dot">•</span> QUARANTINED{" "}
+                  <span className="dot">•</span> RECOVERED
+                </p>
               </div>
 
               <div className="metrics-section">
@@ -212,6 +239,7 @@ export default function App() {
           <section className="chart-alerts-grid">
             <div className="chart-card">
               <h2>Live Threat Trend</h2>
+              <p className="subtle-label">Anomaly score over time</p>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={history}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
@@ -221,7 +249,9 @@ export default function App() {
                   <Line
                     type="monotone"
                     dataKey="anomaly_score"
-                    stroke="#00e5ff"
+                    stroke={getTierColor(
+                      history[history.length - 1]?.tier || data?.tier || "LOW"
+                    )}
                     strokeWidth={3}
                     dot={false}
                   />
@@ -232,30 +262,51 @@ export default function App() {
             <div className="right-bottom-grid">
               <div className="response-card">
                 <h2>Response Engine</h2>
+                {data && (
+                  <p className="subtle-label">
+                    Automated response posture for active workload
+                  </p>
+                )}
                 {(() => {
-                  const summary = getResponseSummary(
-                    data.anomaly_score,
-                    data.tier
-                  );
+                  const threatDetected =
+                    data?.response_engine?.threat_detected === "YES";
+                  const confidence =
+                    data?.response_engine?.confidence || data?.tier || "NORMAL";
+                  const scope = data?.response_engine?.scope || data?.workload_id;
+                  const actionText =
+                    data?.response_engine?.action ||
+                    (threatDetected ? "Quarantine triggered" : "Monitoring only");
+                  const responseColor = getResponseStateColor(data);
+
                   return (
-                    <ul className="response-list">
-                      <li>
-                        <span className="label">Status</span>
-                        <span className="value">{summary.status}</span>
-                      </li>
-                      <li>
-                        <span className="label">Confidence</span>
-                        <span className="value">{summary.confidence}</span>
-                      </li>
-                      <li>
-                        <span className="label">Action</span>
-                        <span className="value">{summary.action}</span>
-                      </li>
-                      <li>
-                        <span className="label">Scope</span>
-                        <span className="value">{summary.scope}</span>
-                      </li>
-                    </ul>
+                <ul className="response-list">
+                  <li>
+                    <span className="label">Threat Detected</span>
+                    <span className="value">
+                      <span style={{ color: responseColor }}>
+                        {threatDetected ? "ACTIVE THREAT" : "NO ACTIVE THREAT"}
+                      </span>
+                    </span>
+                  </li>
+                  <li>
+                    <span className="label">Confidence</span>
+                    <span className="value">
+                      <span style={{ color: responseColor }}>{confidence}</span>
+                    </span>
+                  </li>
+                  <li>
+                    <span className="label">Action</span>
+                    <span className="value">
+                      <span style={{ color: responseColor }}>{actionText}</span>
+                    </span>
+                  </li>
+                  <li>
+                    <span className="label">Scope</span>
+                    <span className="value">
+                      <span style={{ color: responseColor }}>{scope}</span>
+                    </span>
+                  </li>
+                </ul>
                   );
                 })()}
               </div>
@@ -267,7 +318,10 @@ export default function App() {
                     <div className="alert-item" key={idx}>
                       <div>
                         <strong>{item.timestamp}</strong>
-                        <p>Threat Score: {item.anomaly_score}</p>
+                        <p>
+                          {item.workload_id} flagged • Score:{" "}
+                          {Math.round(item.anomaly_score)}
+                        </p>
                       </div>
                       <span
                         className="alert-tier"
@@ -288,9 +342,33 @@ export default function App() {
 }
 
 function MetricCard({ label, value }) {
+  const getMeta = (metricLabel) => {
+    switch (metricLabel) {
+      case "CPU Utilization":
+        return { icon: cpuIcon, tone: "cpu" };
+      case "Memory Utilization":
+        return { icon: memoryIcon, tone: "mem" };
+      case "Request Throughput":
+        return { icon: requestIcon, tone: "net" };
+      case "Auth Failure Rate":
+        return { icon: authIcon, tone: "auth" };
+      case "Service Latency":
+        return { icon: serviceIcon, tone: "lat" };
+      default:
+        return { icon: cpuIcon, tone: "default" };
+    }
+  };
+
+  const meta = getMeta(label);
+
   return (
-    <div className="metric-card">
-      <h3>{label}</h3>
+    <div className={`metric-card metric-${meta.tone}`}>
+      <div className="metric-header-row">
+        <div className="metric-icon">
+          <img src={meta.icon} alt={label} />
+        </div>
+        <h3>{label}</h3>
+      </div>
       <p>{value}</p>
     </div>
   );
