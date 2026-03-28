@@ -2,7 +2,7 @@
 
 AI-powered zero-day threat detection and response demo.
 
-This MVP streams live cloud workload telemetry from a Python backend into a React dashboard, scores it for anomalies, and visualizes automated response decisions.
+This MVP streams live cloud workload telemetry from a Python backend into a React dashboard, scores it with an IsolationForest model, and visualizes automated response decisions (isolation vs. monitoring) in real time.
 
 ---
 
@@ -12,12 +12,13 @@ This MVP streams live cloud workload telemetry from a Python backend into a Reac
 ZeroShield/
 ├── backend/              # Python API, model, and simulator control
 │   ├── app.py            # Flask + Socket.IO backend
-│   ├── train_model.py    # Trains anomaly model on baseline.csv
+│   ├── collector.py      # Collects real baseline telemetry into baseline.csv
+│   ├── train_model.py    # Trains IsolationForest on baseline.csv
 │   └── model.pkl         # Trained model artifact
 ├── simulator/            # Attack traffic generator
 │   └── attack_sim.py
 ├── data/
-│   └── baseline.csv      # Baseline workload telemetry
+│   └── baseline.csv      # Baseline workload telemetry (collected via collector.py)
 ├── frontend/
 │   └── zeroshield-ui/    # React + Vite dashboard
 ├── requirements.txt      # Python dependencies
@@ -29,12 +30,12 @@ ZeroShield/
 ## Key features
 
 - **Live Threat Score**
-	- Streams anomaly scores (0–100) over WebSocket.
-	- Color-coded risk tier: LOW / MEDIUM / HIGH.
+	- Streams model-derived anomaly scores (0–100) over WebSocket.
+	- Color-coded risk tier: NORMAL / LOW / MEDIUM / HIGH.
 
 - **Workload Isolation Status**
 	- Card that reflects the current isolation posture.
-	- Logic: if `anomaly_score > 85` → status **QUARANTINED**, else **MONITORING**.
+	- Backed by backend logic that flips isolation to **QUARANTINED** when the model confidence reaches **HIGH**, otherwise **MONITORING** / **RECOVERED**.
 
 - **Cloud Workload Telemetry**
 	- Renamed metrics to feel like cloud infra, not a local laptop:
@@ -47,9 +48,9 @@ ZeroShield/
 - **Response Engine**
 	- Summarizes what the system is doing about threats:
 		- Status: Threat detected / No active threat
-		- Confidence: based on model tier (e.g. HIGH)
+		- Confidence: model-driven tier (NORMAL / LOW / MEDIUM / HIGH)
 		- Action: Quarantine triggered / Monitoring only
-		- Scope: Suspicious workload / All workloads
+		- Scope: Affected workload ID (for example `svc-2`)
 
 - **Recent Alerts & Trend**
 	- Live time-series chart of anomaly score.
@@ -74,10 +75,13 @@ cd backend
 # Install Python dependencies
 pip install -r ../requirements.txt
 
-# Train / refresh the model
+# 1) Collect baseline telemetry (CPU, RAM, traffic, etc.)
+python collector.py
+
+# 2) Train / refresh the anomaly model from baseline.csv
 python train_model.py
 
-# Run the API (Flask + Socket.IO)
+# 3) Run the API (Flask + Socket.IO)
 python app.py
 ```
 
@@ -114,8 +118,8 @@ Open the URL printed by Vite (usually `http://localhost:5173`). The dashboard wi
 
 The UI already provides buttons:
 
-- **🚨 Simulate Attack** → calls `/simulate-attack` on the backend.
-- **✅ Stop Attack** → calls `/stop-attack`.
+- **Simulate Attack** → calls `/simulate-attack` on the backend.
+- **Stop Attack** → calls `/stop-attack`.
 
 Under attack, you should see:
 
