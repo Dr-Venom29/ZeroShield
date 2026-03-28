@@ -3,6 +3,7 @@ from flask_socketio import SocketIO
 import pickle
 import random
 import time
+import pandas as pd
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -14,6 +15,10 @@ with open("model.pkl", "rb") as f:
 # Store live history
 history = []
 
+# Attack mode flag
+attack_mode = {"enabled": False}
+
+
 def get_confidence_tier(score):
     if score >= 80:
         return "HIGH"
@@ -22,6 +27,7 @@ def get_confidence_tier(score):
     elif score >= 40:
         return "LOW"
     return "NORMAL"
+
 
 def generate_normal_data():
     return {
@@ -32,6 +38,7 @@ def generate_normal_data():
         "response_time": random.randint(115, 140)
     }
 
+
 def generate_attack_data():
     return {
         "cpu": random.randint(80, 95),
@@ -41,20 +48,20 @@ def generate_attack_data():
         "response_time": random.randint(400, 900)
     }
 
-# Attack mode flag
-attack_mode = {"enabled": False}
 
 def detect(metrics):
-    features = [[
-        metrics["cpu"],
-        metrics["ram"],
-        metrics["requests_per_sec"],
-        metrics["failed_logins"],
-        metrics["response_time"]
-    ]]
+    # Use DataFrame with proper feature names to match training
+    features = pd.DataFrame([{
+        "cpu": metrics["cpu"],
+        "ram": metrics["ram"],
+        "requests_per_sec": metrics["requests_per_sec"],
+        "failed_logins": metrics["failed_logins"],
+        "response_time": metrics["response_time"]
+    }])
 
     prediction = model.predict(features)[0]
 
+    # Simulated threat score based on anomaly result
     if prediction == -1:
         anomaly_score = random.randint(70, 98)
     else:
@@ -75,28 +82,43 @@ def detect(metrics):
 
     return result
 
+
 @app.route("/status")
 def status():
     metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
     return jsonify(detect(metrics))
 
+
 @app.route("/history")
 def get_history():
     return jsonify(history)
+
 
 @app.route("/simulate-attack")
 def simulate_attack():
     attack_mode["enabled"] = True
     return jsonify({"message": "🚨 Attack simulation started!"})
 
+
 @app.route("/stop-attack")
 def stop_attack():
     attack_mode["enabled"] = False
     return jsonify({"message": "✅ Attack simulation stopped."})
 
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "attack_mode": attack_mode["enabled"],
+        "history_count": len(history)
+    })
+
+
 @socketio.on("connect")
 def handle_connect():
     print("Client connected")
+
 
 def background_stream():
     while True:
@@ -104,6 +126,7 @@ def background_stream():
         result = detect(metrics)
         socketio.emit("update", result)
         socketio.sleep(2)
+
 
 if __name__ == "__main__":
     socketio.start_background_task(background_stream)
