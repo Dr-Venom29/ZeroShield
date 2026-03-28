@@ -12,12 +12,12 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from simulator.attack_sim import generate_attack_samples
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = "zeroshield-secret"
+
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode="eventlet",
-    logger=True,
-    engineio_logger=True
+    async_mode="eventlet"
 )
 
 # Load trained model
@@ -25,13 +25,8 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
 with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)
 
-# Store live history
 history = []
-
-# Attack mode flag
 attack_mode = {"enabled": False}
-
-# Attack sample buffer
 attack_buffer = []
 
 
@@ -61,7 +56,6 @@ def generate_attack_data():
     if not attack_buffer:
         df_attacks = generate_attack_samples(10)
 
-        # Drop label before using in detector
         if "label" in df_attacks.columns:
             df_attacks = df_attacks.drop(columns=["label"])
 
@@ -81,7 +75,6 @@ def detect(metrics):
 
     prediction = model.predict(features)[0]
 
-    # Simulated threat score based on anomaly result
     if prediction == -1:
         anomaly_score = random.randint(70, 98)
     else:
@@ -118,7 +111,7 @@ def get_history():
 def simulate_attack():
     global attack_buffer
     attack_mode["enabled"] = True
-    attack_buffer = []  # Reset attack buffer for fresh attack sequence
+    attack_buffer = []
     return jsonify({"message": "🚨 Attack simulation started!"})
 
 
@@ -139,10 +132,12 @@ def health():
 
 @socketio.on("connect")
 def handle_connect():
-    print("Client connected")
-    metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
-    result = detect(metrics)
-    socketio.emit("update", result)
+    print("✅ Client connected")
+
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    print("❌ Client disconnected")
 
 
 def background_stream():
@@ -150,9 +145,10 @@ def background_stream():
         metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
         result = detect(metrics)
         socketio.emit("update", result)
+        print("📡 Emitted:", result)   # DEBUG
         socketio.sleep(2)
 
 
 if __name__ == "__main__":
     socketio.start_background_task(background_stream)
-    socketio.run(app, debug=True)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)

@@ -11,36 +11,52 @@ import {
 } from "recharts";
 import "./index.css";
 
-const socket = io("http://127.0.0.1:5000", {
-  transports: ["websocket", "polling"],
-});
-
 export default function App() {
   const [data, setData] = useState(null);
   const [history, setHistory] = useState([]);
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    socket.on("connect", () => {
-      console.log("✅ Connected to backend socket:", socket.id);
+    let socket;
+
+    const fetchLatestStatus = async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:5000/status");
+        const latest = await res.json();
+        setData(latest);
+        setHistory((prev) => [...prev, latest].slice(-20));
+      } catch (err) {
+        console.error("❌ Failed to fetch initial status:", err);
+      }
+    };
+
+    fetchLatestStatus();
+
+    socket = io("http://127.0.0.1:5000", {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
     });
 
-    socket.on("update", (incoming) => {
-      console.log("📡 Incoming live update:", incoming);
-      setData(incoming);
-      setHistory((prev) => {
-        const updated = [...prev, incoming];
-        return updated.slice(-20);
-      });
+    socket.on("connect", () => {
+      console.log("✅ Connected:", socket.id);
+      setConnected(true);
     });
 
     socket.on("disconnect", () => {
-      console.log("❌ Socket disconnected");
+      console.log("❌ Disconnected");
+      setConnected(false);
+    });
+
+    socket.on("update", (incoming) => {
+      console.log("📡 Incoming:", incoming);
+      setData(incoming);
+      setHistory((prev) => [...prev, incoming].slice(-20));
     });
 
     return () => {
-      socket.off("connect");
-      socket.off("update");
-      socket.off("disconnect");
+      if (socket) socket.disconnect();
     };
   }, []);
 
@@ -71,7 +87,18 @@ export default function App() {
         <div>
           <h1>ZeroShield</h1>
           <p>AI-Powered Zero-Day Threat Detection & Response</p>
+          <span
+            style={{
+              display: "inline-block",
+              marginTop: "10px",
+              color: connected ? "#00e676" : "#ff3b3b",
+              fontWeight: "600",
+            }}
+          >
+            {connected ? "● Live Connected" : "● Disconnected"}
+          </span>
         </div>
+
         <div className="controls">
           <button className="attack-btn" onClick={triggerAttack}>
             🚨 Simulate Attack
@@ -104,14 +131,11 @@ export default function App() {
             </div>
 
             <div className="metrics-grid">
-              <MetricCard label="CPU" value={`${data.cpu}%`} />
-              <MetricCard label="RAM" value={`${data.ram}%`} />
-              <MetricCard label="Req/Sec" value={data.requests_per_sec} />
-              <MetricCard label="Failed Logins" value={data.failed_logins} />
-              <MetricCard
-                label="Response Time"
-                value={`${data.response_time} ms`}
-              />
+              <MetricCard label="CPU" value={`${Math.round(data.cpu)}%`} />
+              <MetricCard label="RAM" value={`${Math.round(data.ram)}%`} />
+              <MetricCard label="Req/Sec" value={Math.round(data.requests_per_sec)} />
+              <MetricCard label="Failed Logins" value={Math.round(data.failed_logins)} />
+              <MetricCard label="Response Time" value={`${Math.round(data.response_time)} ms`} />
             </div>
           </section>
 
@@ -122,7 +146,7 @@ export default function App() {
                 <LineChart data={history}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                   <XAxis dataKey="timestamp" stroke="#999" />
-                  <YAxis stroke="#999" />
+                  <YAxis stroke="#999" domain={[0, 100]} />
                   <Tooltip />
                   <Line
                     type="monotone"
