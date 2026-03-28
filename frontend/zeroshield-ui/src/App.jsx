@@ -81,6 +81,33 @@ export default function App() {
     }
   };
 
+  const getIsolationStatus = (score) => {
+    if (score == null) return "MONITORING";
+    return score > 85 ? "QUARANTINED" : "MONITORING";
+  };
+
+  const getIsolationColor = (status) => {
+    switch (status) {
+      case "QUARANTINED":
+        return "#ff3b3b";
+      case "RECOVERED":
+        return "#00e5ff";
+      case "MONITORING":
+      default:
+        return "#00e676";
+    }
+  };
+
+  const getResponseSummary = (score, tier) => {
+    const highThreat = score != null && score > 85;
+    return {
+      status: highThreat ? "Threat detected" : "No active threat",
+      confidence: tier || "LOW",
+      action: highThreat ? "Quarantine triggered" : "Monitoring only",
+      scope: highThreat ? "Suspicious workload" : "All workloads",
+    };
+  };
+
   return (
     <div className="app">
       <header className="header">
@@ -130,12 +157,55 @@ export default function App() {
               </span>
             </div>
 
-            <div className="metrics-grid">
-              <MetricCard label="CPU" value={`${Math.round(data.cpu)}%`} />
-              <MetricCard label="RAM" value={`${Math.round(data.ram)}%`} />
-              <MetricCard label="Req/Sec" value={Math.round(data.requests_per_sec)} />
-              <MetricCard label="Failed Logins" value={Math.round(data.failed_logins)} />
-              <MetricCard label="Response Time" value={`${Math.round(data.response_time)} ms`} />
+            <div className="right-top-grid">
+              <div className="isolation-card">
+                <h2>Workload Isolation Status</h2>
+                {(() => {
+                  const status = getIsolationStatus(data.anomaly_score);
+                  const color = getIsolationColor(status);
+                  return (
+                    <>
+                      <div
+                        className="isolation-status"
+                        style={{ color, borderColor: color }}
+                      >
+                        {status}
+                      </div>
+                      <p className="isolation-legend">
+                        MONITORING 
+                        <span className="dot">•</span> QUARANTINED 
+                        <span className="dot">•</span> RECOVERED
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="metrics-section">
+                <h2>Cloud Workload Telemetry</h2>
+                <div className="metrics-grid">
+                  <MetricCard
+                    label="CPU Utilization"
+                    value={`${Math.round(data.cpu)}%`}
+                  />
+                  <MetricCard
+                    label="Memory Utilization"
+                    value={`${Math.round(data.ram)}%`}
+                  />
+                  <MetricCard
+                    label="Request Throughput"
+                    value={Math.round(data.requests_per_sec)}
+                  />
+                  <MetricCard
+                    label="Auth Failure Rate"
+                    value={Math.round(data.failed_logins)}
+                  />
+                  <MetricCard
+                    label="Service Latency"
+                    value={`${Math.round(data.response_time)} ms`}
+                  />
+                </div>
+              </div>
             </div>
           </section>
 
@@ -159,23 +229,55 @@ export default function App() {
               </ResponsiveContainer>
             </div>
 
-            <div className="alerts-card">
-              <h2>Recent Alerts</h2>
-              <div className="alerts-list">
-                {[...history].reverse().map((item, idx) => (
-                  <div className="alert-item" key={idx}>
-                    <div>
-                      <strong>{item.timestamp}</strong>
-                      <p>Threat Score: {item.anomaly_score}</p>
+            <div className="right-bottom-grid">
+              <div className="response-card">
+                <h2>Response Engine</h2>
+                {(() => {
+                  const summary = getResponseSummary(
+                    data.anomaly_score,
+                    data.tier
+                  );
+                  return (
+                    <ul className="response-list">
+                      <li>
+                        <span className="label">Status</span>
+                        <span className="value">{summary.status}</span>
+                      </li>
+                      <li>
+                        <span className="label">Confidence</span>
+                        <span className="value">{summary.confidence}</span>
+                      </li>
+                      <li>
+                        <span className="label">Action</span>
+                        <span className="value">{summary.action}</span>
+                      </li>
+                      <li>
+                        <span className="label">Scope</span>
+                        <span className="value">{summary.scope}</span>
+                      </li>
+                    </ul>
+                  );
+                })()}
+              </div>
+
+              <div className="alerts-card">
+                <h2>Recent Alerts</h2>
+                <div className="alerts-list">
+                  {[...history].reverse().map((item, idx) => (
+                    <div className="alert-item" key={idx}>
+                      <div>
+                        <strong>{item.timestamp}</strong>
+                        <p>Threat Score: {item.anomaly_score}</p>
+                      </div>
+                      <span
+                        className="alert-tier"
+                        style={{ color: getTierColor(item.tier) }}
+                      >
+                        {item.tier}
+                      </span>
                     </div>
-                    <span
-                      className="alert-tier"
-                      style={{ color: getTierColor(item.tier) }}
-                    >
-                      {item.tier}
-                    </span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </section>
