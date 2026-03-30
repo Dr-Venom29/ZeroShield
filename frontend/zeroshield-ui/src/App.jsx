@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { io } from "socket.io-client";
 import {
   LineChart,
@@ -16,28 +16,28 @@ import requestIcon from "./assets/request.svg";
 import authIcon from "./assets/auth.svg";
 import serviceIcon from "./assets/service.svg";
 
+const BACKEND_URL = "http://localhost:5000";
+
 export default function App() {
   const [data, setData] = useState(null);
   const [history, setHistory] = useState([]);
   const [connected, setConnected] = useState(false);
 
+  const fetchLatestStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/status`);
+      const latest = await res.json();
+      setData(latest);
+      setHistory((prev) => [...prev, latest].slice(-20));
+    } catch (err) {
+      console.error("Failed to fetch latest status:", err);
+    }
+  }, []);
+
   useEffect(() => {
     let socket;
 
-    const fetchLatestStatus = async () => {
-      try {
-        const res = await fetch("http://127.0.0.1:5000/status");
-        const latest = await res.json();
-        setData(latest);
-        setHistory((prev) => [...prev, latest].slice(-20));
-      } catch (err) {
-        console.error("Failed to fetch initial status:", err);
-      }
-    };
-
-    fetchLatestStatus();
-
-    socket = io("http://127.0.0.1:5000", {
+    socket = io(BACKEND_URL, {
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -47,6 +47,7 @@ export default function App() {
     socket.on("connect", () => {
       console.log("Connected:", socket.id);
       setConnected(true);
+      fetchLatestStatus();
     });
 
     socket.on("disconnect", () => {
@@ -63,18 +64,28 @@ export default function App() {
     return () => {
       if (socket) socket.disconnect();
     };
-  }, []);
+  }, [fetchLatestStatus]);
 
   const triggerAttack = async () => {
-    await fetch("http://127.0.0.1:5000/simulate-attack", {
-      method: "POST",
-    });
+    try {
+      await fetch(`${BACKEND_URL}/simulate-attack`, {
+        method: "POST",
+      });
+      await fetchLatestStatus();
+    } catch (err) {
+      console.error("Failed to trigger attack:", err);
+    }
   };
 
   const stopAttack = async () => {
-    await fetch("http://127.0.0.1:5000/stop-attack", {
-      method: "POST",
-    });
+    try {
+      await fetch(`${BACKEND_URL}/stop-attack`, {
+        method: "POST",
+      });
+      await fetchLatestStatus();
+    } catch (err) {
+      console.error("Failed to stop attack:", err);
+    }
   };
 
   const getTierColor = (tier) => {
@@ -228,7 +239,6 @@ export default function App() {
                 <h2>Workload Isolation Status</h2>
                 <p className="subtle-label">
                   Target Workload: {data.workload_id}
-                  
                 </p>
 
                 <div
@@ -307,7 +317,9 @@ export default function App() {
                     <ul className="attack-intel-list">
                       <li>
                         <span className="label">Attack Type</span>
-                        <span className="value">{data.attack_type}</span>
+                        <span className="value">
+                          {data.attack_type.replaceAll("_", " ")}
+                        </span>
                       </li>
                       <li>
                         <span className="label">Severity</span>
@@ -366,34 +378,34 @@ export default function App() {
                   const responseColor = getResponseStateColor(data);
 
                   return (
-                <ul className="response-list">
-                  <li>
-                    <span className="label">Threat Detected</span>
-                    <span className="value">
-                      <span style={{ color: responseColor }}>
-                        {threatDetected ? "ACTIVE THREAT" : "NO ACTIVE THREAT"}
-                      </span>
-                    </span>
-                  </li>
-                  <li>
-                    <span className="label">Confidence</span>
-                    <span className="value">
-                      <span style={{ color: responseColor }}>{confidence}</span>
-                    </span>
-                  </li>
-                  <li>
-                    <span className="label">Action</span>
-                    <span className="value">
-                      <span style={{ color: responseColor }}>{actionText}</span>
-                    </span>
-                  </li>
-                  <li>
-                    <span className="label">Scope</span>
-                    <span className="value">
-                      <span style={{ color: responseColor }}>{scope}</span>
-                    </span>
-                  </li>
-                </ul>
+                    <ul className="response-list">
+                      <li>
+                        <span className="label">Threat Detected</span>
+                        <span className="value">
+                          <span style={{ color: responseColor }}>
+                            {threatDetected ? "ACTIVE THREAT" : "NO ACTIVE THREAT"}
+                          </span>
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Confidence</span>
+                        <span className="value">
+                          <span style={{ color: responseColor }}>{confidence}</span>
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Action</span>
+                        <span className="value">
+                          <span style={{ color: responseColor }}>{actionText}</span>
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Scope</span>
+                        <span className="value">
+                          <span style={{ color: responseColor }}>{scope}</span>
+                        </span>
+                      </li>
+                    </ul>
                   );
                 })()}
               </div>
@@ -406,8 +418,11 @@ export default function App() {
                       <div>
                         <strong>{item.timestamp}</strong>
                         <p>
-                          {item.workload_id} flagged • Score:{" "}
-                          {Math.round(item.anomaly_score)}
+                          {item.workload_id} • {" "}
+                          {(item.attack_type || "Normal Activity").replaceAll("_", " ")}
+                          {" "}• {" "}
+                          {item.attack_severity ? item.attack_severity.toUpperCase() : "N/A"}
+                          {" "}• Score: {Math.round(item.anomaly_score)}
                         </p>
                       </div>
                       <span

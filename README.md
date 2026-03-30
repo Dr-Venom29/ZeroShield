@@ -2,7 +2,7 @@
 
 AI-powered zero-day threat detection and response demo.
 
-This MVP streams live cloud workload telemetry from a Python backend into a React dashboard, scores it with an IsolationForest model, and visualizes automated response decisions (isolation vs. monitoring) in real time.
+ZeroShield streams live cloud workload telemetry from a Python backend into a React dashboard, scores it with an IsolationForest model, simulates structured attacks, and visualizes automated response decisions (isolation vs. monitoring) in real time.
 
 ---
 
@@ -10,13 +10,13 @@ This MVP streams live cloud workload telemetry from a Python backend into a Reac
 
 ```bash
 ZeroShield/
-├── backend/              # Python API, model, and simulator control
-│   ├── app.py            # Flask + Socket.IO backend
+├── backend/              # Python API, anomaly model, and response engine
+│   ├── app.py            # Flask + Socket.IO backend + isolation logic
 │   ├── collector.py      # Collects real baseline telemetry into baseline.csv
-│   ├── train_model.py    # Trains IsolationForest on baseline.csv
-│   └── model.pkl         # Trained model artifact
-├── simulator/            # Attack traffic generator
-│   └── attack_sim.py
+│   ├── train_model.py    # Trains IsolationForest on baseline.csv and saves model.pkl
+│   └── model.pkl         # Trained model artifact (generated)
+├── simulator/            # Attack traffic generator (Phase B–E simulator)
+│   └── attack_sim.py     # Generates typed, severity-aware attacks from baseline.csv
 ├── data/
 │   └── baseline.csv      # Baseline workload telemetry (collected via collector.py)
 ├── frontend/
@@ -33,28 +33,41 @@ ZeroShield/
 	- Streams model-derived anomaly scores (0–100) over WebSocket.
 	- Color-coded risk tier: NORMAL / LOW / MEDIUM / HIGH.
 
+- **Attack Simulator (typed + severity-aware)**
+	- `simulator/attack_sim.py` generates realistic attack telemetry from `baseline.csv`.
+	- Attack types: `CPU_SPIKE`, `AUTH_FLOOD`, `MEM_EXHAUSTION`, `SLOWDOWN`.
+	- Severity levels: `mild`, `moderate`, `severe` with weighted distribution.
+	- Metrics are perturbed according to attack type/severity and then clipped/normalized.
+
 - **Workload Isolation Status**
 	- Card that reflects the current isolation posture.
-	- Backed by backend logic that flips isolation to **QUARANTINED** when the model confidence reaches **HIGH**, otherwise **MONITORING** / **RECOVERED**.
+	- Backend logic flips isolation to **QUARANTINED** when confidence is **HIGH**,
+		otherwise **MONITORING** / **RECOVERED**.
 
 - **Cloud Workload Telemetry**
-	- Renamed metrics to feel like cloud infra, not a local laptop:
+	- Metrics shaped to feel like cloud infra:
 		- CPU Utilization
 		- Memory Utilization
 		- Request Throughput
 		- Auth Failure Rate
 		- Service Latency
 
+- **Attack Intelligence Panel**
+	- Shows `attack_type` (prettified, e.g. `AUTH FLOOD`) and `attack_severity`.
+	- Displays detection confidence and a natural-language explanation of why the
+		model flagged the current pattern.
+
 - **Response Engine**
 	- Summarizes what the system is doing about threats:
-		- Status: Threat detected / No active threat
+		- Threat Detected: ACTIVE THREAT / NO ACTIVE THREAT
 		- Confidence: model-driven tier (NORMAL / LOW / MEDIUM / HIGH)
 		- Action: Quarantine triggered / Monitoring only
-		- Scope: Affected workload ID (for example `svc-2`)
+		- Scope: Affected workload ID (for example `svc-2`).
 
 - **Recent Alerts & Trend**
 	- Live time-series chart of anomaly score.
-	- Scrollable list of recent alerts with timestamp and tier.
+	- Scrollable list of recent alerts with timestamp, workload, attack type,
+		severity, and tier.
 
 ---
 
@@ -62,10 +75,11 @@ ZeroShield/
 
 - Python 3.9+ (recommended)
 - Node.js 18+ and npm
+- Docker + Docker Compose (optional, for containerized run)
 
 ---
 
-## Backend setup
+## Backend setup (local)
 
 From the project root:
 
@@ -88,11 +102,15 @@ python app.py
 By default the backend exposes:
 
 - `GET  /status` – latest telemetry + threat score payload
-- `POST /simulate-attack` – starts attack simulation
+- `GET  /history` – recent detection history
+- `GET  /isolation-log` – isolation/quarantine timeline
+- `POST /simulate-attack` – starts attack simulation (uses `attack_sim.py`)
 - `POST /stop-attack` – stops attack simulation
 - Socket.IO channel `update` – pushes live status objects
 
-Make sure the backend is running before starting the UI.
+The backend also emits structured JSON logs for each detection event
+(`timestamp`, `tier`, `anomaly_score`, `attack_type`, `attack_severity`,
+`response_action`, `workload_id`, `isolation_status`).
 
 ---
 
@@ -110,23 +128,30 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite (usually `http://localhost:5173`). The dashboard will automatically connect to `http://127.0.0.1:5000` for status and WebSocket updates.
+Open the URL printed by Vite (usually `http://localhost:5173`). The dashboard
+connects to the backend via a `BACKEND_URL` constant inside `App.jsx`
+(defaults to `http://localhost:5000`).
 
 ---
 
 ## Simulating attacks
 
-The UI already provides buttons:
+The UI provides buttons:
 
-- **Simulate Attack** → calls `/simulate-attack` on the backend.
-- **Stop Attack** → calls `/stop-attack`.
+- **Simulate Attack** → `POST /simulate-attack` on the backend and then
+	immediately fetches `/status` for an instant UI refresh.
+- **Stop Attack** → `POST /stop-attack` and then fetches `/status`.
 
 Under attack, you should see:
 
 - Threat Score spike toward 100.
 - Tier move to **HIGH**.
 - Isolation Status switch to **QUARANTINED**.
-- Response Engine show `Threat detected / Quarantine triggered / Suspicious workload`.
+- Response Engine show an ACTIVE THREAT with quarantine action.
+- Attack Intelligence card populated with attack type, severity, and
+	explanation of why it was flagged.
+- Recent Alerts lines that look like:
+	`svc-2 • AUTH FLOOD • SEVERE • Score: 97`.
 
 You can also run the simulator script directly (optional):
 
@@ -135,20 +160,46 @@ cd simulator
 python attack_sim.py
 ```
 
+This prints a small sample of generated attack rows for inspection.
+
+---
+
+## Dockerized run (backend + frontend)
+
+From the project root:
+
+```bash
+docker compose down
+docker compose up --build
+```
+
+This will:
+
+- Build the backend image (Python + Flask + Socket.IO) using `requirements.txt`.
+- Build the frontend image (React + Vite) and expose it on port 5173.
+- Wire the frontend to talk to the backend service inside the Compose network.
+
+Then open `http://localhost:5173` in your browser.
+
 ---
 
 ## Tech stack
 
-- **Backend:** Python, Flask, scikit-learn, Socket.IO
+- **Backend:** Python, Flask, Flask-SocketIO, scikit-learn (pinned), pandas, psutil
+- **Simulator:** Python, pandas, NumPy (attack generation over baseline.csv)
 - **Frontend:** React, Vite, Recharts, socket.io-client
+- **Infra:** Docker, Docker Compose (optional)
 
 ---
 
 ## Notes
 
-This is an MVP intended for demos and hackathons, not production. For a real deployment you’d want:
+This is an MVP intended for demos and hackathons, not production. For a real
+deployment you’d want:
 
-- AuthN/Z on all endpoints.
-- Persistent storage for alerts/events.
-- Hardening around model loading and input validation.
-- Kubernetes or cloud-hosted deployment (e.g., containerized backend + static frontend).
+- Strong authN/Z on all endpoints and WebSockets.
+- Persistent storage for alerts/events and model metrics.
+- Hardening around model loading, input validation, and error handling.
+- Production-grade observability (centralized logs, metrics, tracing).
+- A proper cloud deployment (Kubernetes, container app, or similar) with
+	secrets management and CI/CD.

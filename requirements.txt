@@ -1,7 +1,7 @@
 flask
 flask-socketio
-scikit-learn
-numpy
-pandas
 eventlet
+pandas
+numpy
+scikit-learn==1.6.1
 psutil

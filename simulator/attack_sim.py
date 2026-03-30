@@ -27,6 +27,16 @@ def generate_attack_samples(n=10):
 
     sampled = base.sample(n=n, replace=True).copy()
 
+    # Convert mutable numeric telemetry columns to float before perturbation
+    numeric_cols = [
+        "cpu",
+        "ram",
+        "requests_per_sec",
+        "failed_logins",
+        "response_time",
+    ]
+    sampled[numeric_cols] = sampled[numeric_cols].astype(float)
+
     attack_types = ["CPU_SPIKE", "AUTH_FLOOD", "MEM_EXHAUSTION", "SLOWDOWN"]
 
     # Severity distribution (mild / moderate / severe)
@@ -112,6 +122,13 @@ def generate_attack_samples(n=10):
     sampled["cpu"] = np.clip(sampled["cpu"], 0, 100)
     sampled["ram"] = np.clip(sampled["ram"], 0, 100)
     sampled["response_time"] = np.clip(sampled["response_time"], 0, 2000)
+
+    # Normalize output types
+    sampled["cpu"] = sampled["cpu"].round(2)
+    sampled["ram"] = sampled["ram"].round(2)
+    sampled["response_time"] = sampled["response_time"].round(2)
+    sampled["requests_per_sec"] = sampled["requests_per_sec"].astype(int)
+    sampled["failed_logins"] = sampled["failed_logins"].astype(int)
 
     sampled["label"] = 1
     sampled["attack_type"] = chosen_types
