@@ -46,6 +46,15 @@ C_VALUE = {"val": 1.5}
 isolated_state = {"active": False}
 
 
+# Fixed service-to-service dependency graph used for threat propagation
+SERVICE_GRAPH = {
+    "svc-1": {"svc-2": 0.9, "svc-3": 0.4},
+    "svc-2": {"svc-1": 0.8, "svc-4": 0.7},
+    "svc-3": {"svc-1": 0.5, "svc-4": 0.3},
+    "svc-4": {"svc-2": 0.6},
+}
+
+
 def log_event(result):
   """Emit a single structured security telemetry log.
 
@@ -53,6 +62,7 @@ def log_event(result):
   include the core detection fields and attack metadata.
   """
   response = result.get("response_engine") or {}
+  threat_graph = result.get("threat_graph") or {}
   logging.info(
       json.dumps(
           {
@@ -64,6 +74,7 @@ def log_event(result):
               "response_action": response.get("action"),
               "workload_id": result.get("workload_id"),
               "isolation_status": result.get("isolation_status"),
+              "blast_radius": threat_graph.get("blast_radius"),
           }
       )
   )
@@ -77,6 +88,51 @@ def get_confidence_tier(score):
     elif score >= 35:
         return "LOW"
     return "NORMAL"
+
+
+def propagate_threat(primary_service, primary_score):
+    """Estimate propagated risk to neighboring services in the graph.
+
+    Uses a simple weighted model: risk decays by link strength and a
+    global attenuation factor so neighbors are always lower risk than
+    the primary node.
+    """
+
+    neighbors = SERVICE_GRAPH.get(primary_service, {})
+    impacted = []
+
+    for neighbor, weight in neighbors.items():
+        propagated_risk = round(primary_score * weight * 0.55, 2)
+
+        if propagated_risk >= 30:
+            tier = get_confidence_tier(propagated_risk)
+            impacted.append(
+                {
+                    "service": neighbor,
+                    "risk_score": propagated_risk,
+                    "tier": tier,
+                    "link_strength": weight,
+                }
+            )
+
+    impacted.sort(key=lambda x: x["risk_score"], reverse=True)
+    return impacted
+
+
+def estimate_blast_radius(impacted_services):
+    """Summarize how wide the potential impact is across the graph."""
+
+    high = sum(1 for s in impacted_services if s["risk_score"] >= 60)
+    med = sum(1 for s in impacted_services if 35 <= s["risk_score"] < 60)
+    low = sum(1 for s in impacted_services if s["risk_score"] < 35)
+
+    if high >= 2:
+        return "HIGH"
+    elif high >= 1 or med >= 2:
+        return "MEDIUM"
+    elif med >= 1 or low >= 2:
+        return "LOW"
+    return "MINIMAL"
 
 
 def generate_normal_data():
@@ -181,12 +237,21 @@ def detect(metrics):
         response_action = "Recovered to monitoring state"
         isolated_state["active"] = False
 
+    # Threat propagation over the fixed service graph
+    propagated = propagate_threat(workload_id, anomaly_score)
+    blast_radius = estimate_blast_radius(propagated)
+
     result = {
         **metrics,
         "anomaly_score": anomaly_score,
         "tier": tier,
         "timestamp": time.strftime("%H:%M:%S"),
         "isolation_status": isolation_status,
+        "threat_graph": {
+            "primary_node": workload_id,
+            "impacted_services": propagated,
+            "blast_radius": blast_radius,
+        },
         "response_engine": {
             "threat_detected": "YES" if tier in ["MEDIUM", "HIGH"] else "NO",
             "confidence": tier,
