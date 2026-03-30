@@ -6,10 +6,10 @@
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-hover: rgba(255, 255, 255, 0.15);
   
-  /* Typography Colors */
-  --text-primary: #ffffff;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+  /* Typography Colors (increased contrast) */
+  --text-primary: #f9fafb;
+  --text-secondary: #e5e5e5;
+  --text-muted: #9ca3af;
   
   /* Accents (Muted for Premium Feel) */
   --accent-primary: #22d3ee; /* Cyan */
@@ -72,9 +72,7 @@ body {
   font-size: 2rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  background: linear-gradient(to right, #fff, #a1a1aa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #f9fafb;
 }
 
 .header p {
@@ -84,18 +82,21 @@ body {
   font-weight: 400;
 }
 
-.header > div > span {
+.header-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
   font-size: 0.8rem;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  padding: 0.2rem 0.85rem;
+  border-radius: 999px;
+  background-color: #000000;
+  border: 1px solid #27272a;
 }
 
-.header > div > span::before {
+.header-status::before {
   content: '';
   display: block;
   width: 6px;
@@ -112,41 +113,39 @@ body {
 }
 
 button {
-  border: none;
-  padding: 0.75rem 1.25rem;
-  border-radius: 8px;
+  border-radius: 999px;
+  padding: 0.6rem 1.5rem;
+  border: 1px solid #27272a;
+  background-color: #050505;
   cursor: pointer;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-  overflow: hidden;
+  color: var(--text-primary);
 }
 
 .attack-btn {
-  background: rgba(239, 68, 68, 0.1);
+  background-color: #050505;
   color: var(--accent-danger);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.55);
 }
 
 .attack-btn:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
-  box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
-  transform: translateY(-1px);
+  background-color: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.75);
 }
 
 .stop-btn {
-  background: rgba(16, 185, 129, 0.1);
+  background-color: #050505;
   color: var(--accent-success);
-  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
 }
 
 .stop-btn:hover {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
-  transform: translateY(-1px);
+  background-color: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.75);
 }
 
 /* --- Command Bar Wrapper --- */
@@ -157,15 +156,14 @@ button {
 }
 
 .command-bar {
-  padding: 0.9rem 2.25rem;
-  border-radius: 14px;
-  background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 40%),
-    rgba(6, 6, 10, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.65), 0 18px 45px rgba(0, 0, 0, 0.7);
+  padding: 0.8rem 2rem;
+  border-radius: 12px;
+  background-color: #000000;
+  border: 1px solid #262626;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.9);
   display: inline-flex;
   align-items: center;
-  gap: 2.5rem;
+  gap: 2.25rem;
   flex-wrap: wrap;
 }
 
@@ -184,10 +182,26 @@ button {
 }
 
 .command-item .value {
-  font-size: 0.95rem;
-  font-weight: 650;
+  font-size: 0.98rem;
+  font-weight: 600;
   color: #f9fafb;
   font-variant-numeric: tabular-nums;
+}
+
+.command-bar .command-item:not(:last-child) {
+  position: relative;
+  padding-right: 2rem;
+}
+
+.command-bar .command-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 26px;
+  background: linear-gradient(to bottom, transparent, rgba(63, 63, 70, 0.9), transparent);
 }
 
 /* --- Loading --- */
@@ -231,7 +245,8 @@ button {
 .chart-card,
 .alerts-card,
 .isolation-card,
-.response-card {
+.response-card,
+.attack-intel-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
@@ -251,7 +266,7 @@ button {
 
 /* --- Headers & Labels --- */
 h2 {
-  font-size: 0.95rem;
+  font-size: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-secondary);
@@ -261,7 +276,7 @@ h2 {
 
 /* New Style for the <p className="subtle-label"> */
 .subtle-label {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -280,9 +295,20 @@ h2 {
   overflow: hidden;
 }
 
+.score-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.score-card .subtle-label {
+  margin-top: 0.1rem;
+  margin-bottom: 1.1rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
 .score {
-  font-size: 5rem;
-  font-weight: 800;
+  font-size: 4.6rem;
+  font-weight: 780;
   line-height: 1;
   margin-bottom: 1rem;
   font-variant-numeric: tabular-nums;
@@ -290,46 +316,60 @@ h2 {
 }
 
 .tier-badge {
-  padding: 0.4rem 1rem;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 0.8rem;
-  letter-spacing: 0.05em;
-  color: #000;
-  background: #333;
+  padding: 0.3rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.85);
+  font-weight: 650;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: #020617;
   text-transform: uppercase;
 }
 
 /* --- Isolation Card --- */
+.isolation-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .isolation-card h2 {
   margin-bottom: 0.25rem;
+}
+
+.isolation-card .subtle-label {
+  margin-top: 0.35rem;
+  margin-bottom: 1rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
 }
 
 .isolation-status {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.6rem 0;
+  padding: 0.55rem 0;
   width: 100%;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-weight: 650;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  font-size: 1.2rem;
-  margin-bottom: 1rem;
-  background: rgba(0,0,0,0.2);
+  font-size: 0.9rem;
+  margin-bottom: 0.9rem;
+  background-color: #050505;
 }
 
 .isolation-legend {
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 0.15rem;
 }
 
 .isolation-legend .dot {
@@ -394,6 +434,23 @@ h2 {
 /* --- Chart Card --- */
 .chart-card {
   min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.chart-card .subtle-label {
+  margin-top: 0.1rem;
+  margin-bottom: 1.1rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.chart-card .recharts-responsive-container {
+  margin-top: 0.25rem;
 }
 
 /* Recharts specific overrides */
@@ -415,19 +472,30 @@ h2 {
 }
 
 /* --- Response Engine --- */
+.response-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.response-card .subtle-label {
+  margin-top: 0.1rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
 .response-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.8rem;
 }
 
 .response-list li {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  align-items: baseline;
+  padding: 0.35rem 0 0.6rem;
+  border-bottom: 1px solid rgba(39,39,42,0.9);
 }
 
 .response-list li:last-child {
@@ -437,23 +505,82 @@ h2 {
 
 .response-list .label {
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
 }
 
 .response-list .value {
   font-weight: 600;
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   text-align: right;
 }
 
+/* --- Attack Intelligence --- */
+.attack-intel-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.attack-intel-card .subtle-label {
+  margin-top: 0.1rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.attack-intel-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.attack-intel-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.severity-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.threat-context {
+  margin-top: 1.1rem;
+}
+
+.context-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.context-text {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
 /* --- Alerts Card --- */
+.alerts-card h2 {
+  margin-bottom: 0.5rem;
+}
+
 .alerts-list {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.7rem;
   max-height: 325px;
   overflow-y: auto;
   padding-right: 5px;
@@ -463,40 +590,43 @@ h2 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid transparent;
-  padding: 0.85rem 1rem;
-  border-radius: 10px;
-  transition: background 0.2s;
+  background: rgba(10, 10, 12, 0.85);
+  border: 1px solid rgba(39, 39, 42, 0.9);
+  padding: 0.7rem 0.9rem;
+  border-radius: 12px;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .alert-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.05);
+  background: #050505;
+  border-color: var(--border-hover);
 }
 
 .alert-item strong {
   display: block;
-  color: var(--text-primary);
-  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
   font-weight: 600;
   margin-bottom: 2px;
+  letter-spacing: 0.04em;
 }
 
 .alert-item p {
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
 }
 
 .alert-tier {
-  font-weight: 700;
-  font-size: 0.75rem;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(255,255,255,0.05);
+  font-weight: 650;
+  font-size: 0.72rem;
+  padding: 0.25rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
   text-transform: uppercase;
-  min-width: 60px;
+  min-width: 72px;
   text-align: center;
+  letter-spacing: 0.08em;
 }
 
 /* --- Responsive Queries --- */

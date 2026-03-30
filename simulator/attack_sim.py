@@ -29,10 +29,12 @@ def generate_attack_samples(n=10):
 
     attack_types = ["CPU_SPIKE", "AUTH_FLOOD", "MEM_EXHAUSTION", "SLOWDOWN"]
 
-    # More balanced severity distribution
+    # Severity distribution (mild / moderate / severe)
+    # Recommended demo weights: 0.3, 0.4, 0.3
+    # For more intense demos you could use: [0.2, 0.3, 0.5]
     severities = random.choices(
         ["mild", "moderate", "severe"],
-        weights=[45, 35, 20],   # <-- important
+        weights=[0.3, 0.4, 0.3],
         k=n
     )
 
@@ -41,45 +43,70 @@ def generate_attack_samples(n=10):
     for i in range(n):
         atk_type = chosen_types[i]
         severity = severities[i]
+        idx = sampled.index[i]
 
+        # Severity profiles: define strong / moderate / slight multipliers
         if severity == "mild":
-            cpu_mult = np.random.uniform(1.05, 1.25)
-            ram_mult = np.random.uniform(1.03, 1.18)
-            req_mult = np.random.randint(1, 3)
-            fail_add = np.random.randint(0, 2)
-            resp_mult = np.random.uniform(1.05, 1.35)
-
+            strong = np.random.uniform(1.4, 1.8)
+            moderate = np.random.uniform(1.15, 1.35)
+            slight = np.random.uniform(1.02, 1.1)
+            fail_base = (0, 2)
         elif severity == "moderate":
-            cpu_mult = np.random.uniform(1.2, 1.5)
-            ram_mult = np.random.uniform(1.1, 1.35)
-            req_mult = np.random.randint(2, 4)
-            fail_add = np.random.randint(2, 5)
-            resp_mult = np.random.uniform(1.3, 2.0)
-
+            strong = np.random.uniform(1.8, 2.4)
+            moderate = np.random.uniform(1.3, 1.6)
+            slight = np.random.uniform(1.05, 1.15)
+            fail_base = (2, 6)
         else:  # severe
-            cpu_mult = np.random.uniform(1.6, 2.2)
-            ram_mult = np.random.uniform(1.3, 1.8)
-            req_mult = np.random.randint(3, 6)
-            fail_add = np.random.randint(4, 8)
-            resp_mult = np.random.uniform(1.8, 3.0)
+            strong = np.random.uniform(2.4, 3.2)
+            moderate = np.random.uniform(1.5, 2.0)
+            slight = np.random.uniform(1.1, 1.2)
+            fail_base = (5, 12)
 
-        # Apply attack-type-specific emphasis
+        # CPU_SPIKE
+        # cpu ↑↑, response_time ↑, ram slight ↑, failed_logins not much
         if atk_type == "CPU_SPIKE":
-            sampled.at[sampled.index[i], "cpu"] *= cpu_mult * 1.2
-        elif atk_type == "AUTH_FLOOD":
-            sampled.at[sampled.index[i], "failed_logins"] += fail_add * 2
-            sampled.at[sampled.index[i], "requests_per_sec"] *= req_mult
-        elif atk_type == "MEM_EXHAUSTION":
-            sampled.at[sampled.index[i], "ram"] *= ram_mult * 1.2
-        elif atk_type == "SLOWDOWN":
-            sampled.at[sampled.index[i], "response_time"] *= resp_mult * 1.3
+            sampled.at[idx, "cpu"] *= strong
+            sampled.at[idx, "response_time"] *= moderate
+            sampled.at[idx, "ram"] *= slight
+            # keep auth noise small
+            sampled.at[idx, "failed_logins"] += random.randint(*fail_base[:2]) // 2
+            sampled.at[idx, "requests_per_sec"] *= moderate
 
-        # Apply general anomaly uplift
-        sampled.at[sampled.index[i], "cpu"] *= cpu_mult
-        sampled.at[sampled.index[i], "ram"] *= ram_mult
-        sampled.at[sampled.index[i], "requests_per_sec"] *= req_mult
-        sampled.at[sampled.index[i], "failed_logins"] += fail_add
-        sampled.at[sampled.index[i], "response_time"] *= resp_mult
+        # AUTH_FLOOD
+        # failed_logins ↑↑, requests_per_sec ↑, response_time ↑, cpu moderate ↑
+        elif atk_type == "AUTH_FLOOD":
+            sampled.at[idx, "cpu"] *= moderate
+            sampled.at[idx, "response_time"] *= moderate
+            sampled.at[idx, "requests_per_sec"] *= strong
+            sampled.at[idx, "failed_logins"] += random.randint(*fail_base)
+
+        # MEM_EXHAUSTION
+        # ram ↑↑, cpu moderate ↑, response_time ↑, requests moderate ↑
+        elif atk_type == "MEM_EXHAUSTION":
+            sampled.at[idx, "ram"] *= strong
+            sampled.at[idx, "cpu"] *= moderate
+            sampled.at[idx, "response_time"] *= moderate
+            sampled.at[idx, "requests_per_sec"] *= moderate
+            sampled.at[idx, "failed_logins"] += random.randint(*fail_base[:2])
+
+        # SLOWDOWN
+        # response_time ↑↑, cpu moderate, ram moderate, requests may not be huge
+        elif atk_type == "SLOWDOWN":
+            sampled.at[idx, "response_time"] *= strong
+            sampled.at[idx, "cpu"] *= moderate
+            sampled.at[idx, "ram"] *= moderate
+            sampled.at[idx, "requests_per_sec"] *= slight
+            sampled.at[idx, "failed_logins"] += random.randint(*fail_base[:2]) // 2
+
+        # Ensure integer-like counters stay reasonable
+        sampled.at[idx, "requests_per_sec"] = max(
+            1,
+            int(round(sampled.at[idx, "requests_per_sec"]))
+        )
+        sampled.at[idx, "failed_logins"] = max(
+            0,
+            int(round(sampled.at[idx, "failed_logins"]))
+        )
 
     # Clip values to realistic ranges
     sampled["cpu"] = np.clip(sampled["cpu"], 0, 100)

@@ -7,10 +7,14 @@ import os
 import sys
 import psutil
 import random
+import logging
+import json
 
 # Allow importing from simulator folder
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from simulator.attack_sim import generate_attack_samples
+
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "zeroshield-secret"
@@ -42,6 +46,29 @@ C_VALUE = {"val": 1.5}
 isolated_state = {"active": False}
 
 
+def log_event(result):
+  """Emit a single structured security telemetry log.
+
+  This keeps downstream monitoring simple: logs are JSON lines that
+  include the core detection fields and attack metadata.
+  """
+  response = result.get("response_engine") or {}
+  logging.info(
+      json.dumps(
+          {
+              "timestamp": result.get("timestamp"),
+              "tier": result.get("tier"),
+              "score": result.get("anomaly_score"),
+              "attack_type": result.get("attack_type"),
+              "attack_severity": result.get("attack_severity"),
+              "response_action": response.get("action"),
+              "workload_id": result.get("workload_id"),
+              "isolation_status": result.get("isolation_status"),
+          }
+      )
+  )
+
+
 def get_confidence_tier(score):
     if score >= 85:
         return "HIGH"
@@ -66,15 +93,19 @@ def generate_normal_data():
     }
 
 
-def generate_attack_data():
+def generate_attack_sample():
+    """Generate a single synthetic attack metrics dict from baseline.
+
+    Uses simulator.attack_sim.generate_attack_samples to keep backend
+    logic thin and reuse the simulator's attack semantics.
+    """
     df = generate_attack_samples(1)
+    sample = df.iloc[0].to_dict()
 
-    if "label" in df.columns:
-        df = df.drop(columns=["label"])
+    # Attach a workload id for UI/response scope (baseline.csv has none)
+    sample["workload_id"] = f"svc-{random.randint(1, 3)}"
 
-    df["workload_id"] = [f"svc-{random.randint(1, 3)}"]
-
-    return df.to_dict(orient="records")[0]
+    return sample
 
 
 def trigger_isolation(workload_id):
@@ -169,12 +200,18 @@ def detect(metrics):
     if len(history) > 50:
         history.pop(0)
 
+    # Emit structured security telemetry for downstream monitoring
+    log_event(result)
+
     return result
 
 
 @app.route("/status")
 def status():
-    metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
+    if attack_mode["enabled"]:
+        metrics = generate_attack_sample()
+    else:
+        metrics = generate_normal_data()
     return jsonify(detect(metrics))
 
 
@@ -233,10 +270,13 @@ def handle_disconnect():
 
 def background_stream():
     while True:
-        metrics = generate_attack_data() if attack_mode["enabled"] else generate_normal_data()
+        if attack_mode["enabled"]:
+            metrics = generate_attack_sample()
+        else:
+            metrics = generate_normal_data()
         result = detect(metrics)
         socketio.emit("update", result)
-        print("📡 Emitted:", result)   # DEBUG
+        print("📡 Emitted:", result)
         socketio.sleep(2)
 
 

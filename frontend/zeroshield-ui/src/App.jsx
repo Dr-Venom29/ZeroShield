@@ -112,18 +112,56 @@ export default function App() {
     return "#00e676";
   };
 
+  const getSeverityColor = (severity) => {
+    switch ((severity || "").toLowerCase()) {
+      case "severe":
+        return "#ff3b3b";
+      case "moderate":
+        return "#ff9800";
+      case "mild":
+        return "#00e676";
+      default:
+        return "#9ca3af";
+    }
+  };
+
+  const getThreatContext = (d) => {
+    if (!d) return null;
+    const cpu = d.cpu || 0;
+    const ram = d.ram || 0;
+    const rps = d.requests_per_sec || 0;
+    const fails = d.failed_logins || 0;
+    const rt = d.response_time || 0;
+    const atk = d.attack_type;
+
+    if (atk === "AUTH_FLOOD" || fails >= 5 || rps >= 40) {
+      return "High failed logins and request volume suggest an auth flood / brute-force pattern.";
+    }
+    if (atk === "CPU_SPIKE" || (cpu >= 80 && rt >= 180)) {
+      return "Elevated CPU usage and increased latency are consistent with a CPU spike pattern.";
+    }
+    if (atk === "MEM_EXHAUSTION" || ram >= 85) {
+      return "High memory utilization with slower responses indicates a possible memory exhaustion pattern.";
+    }
+    if (atk === "SLOWDOWN" || rt >= 500) {
+      return "Significantly increased response times with moderate resource usage indicate a service slowdown.";
+    }
+    if (d.tier === "HIGH" || d.tier === "MEDIUM") {
+      return "Anomalous combination of workload metrics pushed the risk score above the normal operating band.";
+    }
+    return null;
+  };
+
   return (
     <div className="app">
       <header className="header">
         <div>
           <h1>ZeroShield</h1>
-          <p>AI-Powered Zero-Day Threat Detection & Response</p>
+          <p>AI-Powered Zero-Day Threat Detection &amp; Response</p>
           <span
+            className="header-status"
             style={{
-              display: "inline-block",
-              marginTop: "10px",
               color: connected ? "#00e676" : "#ff3b3b",
-              fontWeight: "600",
             }}
           >
             {connected ? "LIVE CONNECTED" : "DISCONNECTED"}
@@ -190,6 +228,7 @@ export default function App() {
                 <h2>Workload Isolation Status</h2>
                 <p className="subtle-label">
                   Target Workload: {data.workload_id}
+                  
                 </p>
 
                 <div
@@ -260,6 +299,54 @@ export default function App() {
             </div>
 
             <div className="right-bottom-grid">
+              <div className="attack-intel-card">
+                <h2>Attack Intelligence</h2>
+                {data?.attack_type ? (
+                  <>
+                    <p className="subtle-label">Live attack classification</p>
+                    <ul className="attack-intel-list">
+                      <li>
+                        <span className="label">Attack Type</span>
+                        <span className="value">{data.attack_type}</span>
+                      </li>
+                      <li>
+                        <span className="label">Severity</span>
+                        <span className="value">
+                          <span
+                            className="severity-pill"
+                            style={{ color: getSeverityColor(data.attack_severity) }}
+                          >
+                            {data.attack_severity}
+                          </span>
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Detection Confidence</span>
+                        <span className="value">
+                          <span
+                            style={{ color: getTierColor(data.tier) }}
+                          >
+                            {data.response_engine?.confidence || data.tier}
+                          </span>
+                        </span>
+                      </li>
+                    </ul>
+                    {(() => {
+                      const ctx = getThreatContext(data);
+                      if (!ctx) return null;
+                      return (
+                        <div className="threat-context">
+                          <p className="context-label">Why the model flagged this</p>
+                          <p className="context-text">{ctx}</p>
+                        </div>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <p className="subtle-label">No active attack pattern detected</p>
+                )}
+              </div>
+
               <div className="response-card">
                 <h2>Response Engine</h2>
                 {data && (
