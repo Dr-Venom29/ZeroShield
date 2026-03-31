@@ -1,8 +1,8 @@
 ## ZeroShield
 
-AI-powered zero-day threat detection and response demo.
+AI-powered zero-day **detection, propagation analysis, and adaptive response** demo.
 
-ZeroShield streams live cloud workload telemetry from a Python backend into a React dashboard, scores it with an IsolationForest model, simulates structured attacks, and visualizes automated response decisions (isolation vs. monitoring) in real time.
+ZeroShield streams live cloud workload telemetry from a Python backend into a React dashboard, scores it with an IsolationForest model, simulates structured attacks, models blast radius across a small service graph, and visualizes propagation-aware automated response decisions in real time.
 
 ---
 
@@ -10,8 +10,8 @@ ZeroShield streams live cloud workload telemetry from a Python backend into a Re
 
 ```bash
 ZeroShield/
-├── backend/              # Python API, anomaly model, and response engine
-│   ├── app.py            # Flask + Socket.IO backend + isolation logic
+├── backend/              # Python API, anomaly model, threat graph, and response engine
+│   ├── app.py            # Flask + Socket.IO backend, propagation model, STRIDE + DREAD, isolation logic
 │   ├── collector.py      # Collects real baseline telemetry into baseline.csv
 │   ├── train_model.py    # Trains IsolationForest on baseline.csv and saves model.pkl
 │   └── model.pkl         # Trained model artifact (generated)
@@ -32,6 +32,7 @@ ZeroShield/
 - **Live Threat Score**
 	- Streams model-derived anomaly scores (0–100) over WebSocket.
 	- Color-coded risk tier: NORMAL / LOW / MEDIUM / HIGH.
+	- Uses a dynamic threshold (mean − C·std) rather than a fixed score cut.
 
 - **Attack Simulator (typed + severity-aware)**
 	- `simulator/attack_sim.py` generates realistic attack telemetry from `baseline.csv`.
@@ -39,9 +40,44 @@ ZeroShield/
 	- Severity levels: `mild`, `moderate`, `severe` with weighted distribution.
 	- Metrics are perturbed according to attack type/severity and then clipped/normalized.
 
+- **Graph-aware Threat Propagation & Blast Radius**
+	- Fixed service graph for four workloads (`svc-1`..`svc-4`) with weighted edges.
+	- Backend propagates risk from the primary node to neighbors based on link strength.
+	- Computes a qualitative blast radius: MINIMAL / LOW / MEDIUM / HIGH.
+	- UI shows a mini topology map and impacted services with risk bars.
+
+- **Adaptive Response Engine (Propagation-Aware)**
+	- Response decisions consider both anomaly tier and blast radius.
+	- Automatically chooses between:
+		- Passive monitoring
+		- Traffic throttling
+		- Lateral movement prevention
+		- Workload isolation
+		- Full containment zone
+	- Response scope expands from a single workload to a **Propagation containment zone** on wider blast radius.
+	- Response Engine card surfaces Threat State, Confidence, Action, Strategy, Blast Radius, and Enforcement Scope.
+
+- **STRIDE Threat Classification**
+	- Every attack is mapped to STRIDE-style categories via a simple lookup:
+		- `CPU_SPIKE` / `MEM_EXHAUSTION` → `DoS` (Denial of Service)
+		- `AUTH_FLOOD` → `S` (Spoofing)
+		- `SLOWDOWN` → `T` (Tampering)
+	- Frontend shows:
+		- STRIDE code + human label in the Attack Intelligence panel.
+		- STRIDE code in Recent Alerts (with a small legend for judges).
+
+- **DREAD Heat Map**
+	- Backend computes a DREAD assessment per attack type:
+		- Damage, Reproducibility, Exploitability, Affected Users, Discoverability.
+		- Overall score (1–10) and level (LOW / MEDIUM / HIGH / CRITICAL).
+	- Frontend renders a “DREAD Heat Map” card with:
+		- Per-factor 1–10 bar visualization.
+		- Overall risk badge.
+		- Color-coded legend for quick visual triage.
+
 - **Workload Isolation Status**
-	- Card that reflects the current isolation posture.
-	- Backend logic flips isolation to **QUARANTINED** when confidence is **HIGH**,
+	- Card that reflects the current isolation posture for the active workload.
+	- Backend flips isolation to **QUARANTINED** when tier is **HIGH**,
 		otherwise **MONITORING** / **RECOVERED**.
 
 - **Cloud Workload Telemetry**
@@ -56,18 +92,14 @@ ZeroShield/
 	- Shows `attack_type` (prettified, e.g. `AUTH FLOOD`) and `attack_severity`.
 	- Displays detection confidence and a natural-language explanation of why the
 		model flagged the current pattern.
+	- Includes STRIDE classification (code + human label) for the active attack.
 
-- **Response Engine**
-	- Summarizes what the system is doing about threats:
-		- Threat Detected: ACTIVE THREAT / NO ACTIVE THREAT
-		- Confidence: model-driven tier (NORMAL / LOW / MEDIUM / HIGH)
-		- Action: Quarantine triggered / Monitoring only
-		- Scope: Affected workload ID (for example `svc-2`).
-
-- **Recent Alerts & Trend**
-	- Live time-series chart of anomaly score.
-	- Scrollable list of recent alerts with timestamp, workload, attack type,
-		severity, and tier.
+- **Threat Timeline & Recent Alerts**
+	- Live time-series chart of anomaly score (Live Threat Trend).
+	- Threat Timeline: narrative text feed describing recent detections, propagation,
+		and response decisions.
+	- Recent Alerts: scrollable list with timestamp, workload, attack type,
+		STRIDE code, score, and tier.
 
 ---
 
@@ -110,7 +142,7 @@ By default the backend exposes:
 
 The backend also emits structured JSON logs for each detection event
 (`timestamp`, `tier`, `anomaly_score`, `attack_type`, `attack_severity`,
-`response_action`, `workload_id`, `isolation_status`).
+`response_action`, `workload_id`, `isolation_status`, `blast_radius`).
 
 ---
 
@@ -147,11 +179,14 @@ Under attack, you should see:
 - Threat Score spike toward 100.
 - Tier move to **HIGH**.
 - Isolation Status switch to **QUARANTINED**.
-- Response Engine show an ACTIVE THREAT with quarantine action.
-- Attack Intelligence card populated with attack type, severity, and
-	explanation of why it was flagged.
+- Response Engine show an ACTIVE THREAT with a propagation-aware action
+	(e.g. containment zone vs. single-workload isolation).
+- Attack Intelligence card populated with attack type, severity, STRIDE label,
+	and an explanation of why it was flagged.
+- DREAD Heat Map lighting up with higher scores for the relevant factors.
+- Threat Propagation panel showing impacted services and blast radius.
 - Recent Alerts lines that look like:
-	`svc-2 • AUTH FLOOD • SEVERE • Score: 97`.
+	`svc-2 • AUTH FLOOD • S • Score: 97`.
 
 You can also run the simulator script directly (optional):
 
