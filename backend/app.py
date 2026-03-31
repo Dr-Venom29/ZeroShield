@@ -55,6 +55,76 @@ SERVICE_GRAPH = {
 }
 
 
+# Simple STRIDE-style mapping for simulated attack patterns
+STRIDE_MAP = {
+    "CPU_SPIKE": {"stride": "DoS", "label": "Denial of Service"},
+    "AUTH_FLOOD": {"stride": "S", "label": "Spoofing"},
+    "MEM_EXHAUSTION": {"stride": "DoS", "label": "Denial of Service"},
+    "SLOWDOWN": {"stride": "T", "label": "Tampering"},
+    "NORMAL": {"stride": "None", "label": "No threat"},
+}
+
+
+DREAD_MAP = {
+    "CPU_SPIKE": {
+        "damage": 8,
+        "reproducibility": 7,
+        "exploitability": 6,
+        "affected_users": 7,
+        "discoverability": 6,
+    },
+    "AUTH_FLOOD": {
+        "damage": 7,
+        "reproducibility": 9,
+        "exploitability": 8,
+        "affected_users": 8,
+        "discoverability": 7,
+    },
+    "MEM_EXHAUSTION": {
+        "damage": 8,
+        "reproducibility": 8,
+        "exploitability": 6,
+        "affected_users": 7,
+        "discoverability": 6,
+    },
+    "SLOWDOWN": {
+        "damage": 6,
+        "reproducibility": 7,
+        "exploitability": 5,
+        "affected_users": 6,
+        "discoverability": 5,
+    },
+    "NORMAL": {
+        "damage": 1,
+        "reproducibility": 1,
+        "exploitability": 1,
+        "affected_users": 1,
+        "discoverability": 1,
+    },
+}
+
+
+def get_dread_assessment(attack_type):
+    scores = DREAD_MAP.get(attack_type, DREAD_MAP["NORMAL"])
+    total = sum(scores.values())
+    avg = round(total / 5, 1)
+
+    if avg >= 8:
+        level = "CRITICAL"
+    elif avg >= 6:
+        level = "HIGH"
+    elif avg >= 4:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+
+    return {
+        **scores,
+        "score": avg,
+        "level": level,
+    }
+
+
 def log_event(result):
   """Emit a single structured security telemetry log.
 
@@ -133,6 +203,34 @@ def estimate_blast_radius(impacted_services):
     elif med >= 1 or low >= 2:
         return "LOW"
     return "MINIMAL"
+
+
+def get_adaptive_response(tier, blast_radius):
+    """Determine response action based on anomaly severity and spread.
+
+    Combines local risk (tier) with system-wide propagation risk (blast_radius)
+    to choose a higher-level defense posture. This is intentionally simple but
+    mirrors how real adaptive defense systems layer decisions.
+    """
+
+    # Critical scenario "+" wider propagation → full containment
+    if tier == "HIGH" and blast_radius in ["MEDIUM", "HIGH"]:
+        return "Containment zone activated"
+
+    # High anomaly but limited spread
+    if tier == "HIGH":
+        return "Workload isolation enforced"
+
+    # Medium anomaly + any non-minimal propagation risk
+    if tier == "MEDIUM" and blast_radius in ["LOW", "MEDIUM", "HIGH"]:
+        return "Lateral movement prevention"
+
+    # Early-stage suspicious behavior with noticeable spread
+    if tier == "LOW" and blast_radius == "MEDIUM":
+        return "Traffic throttling enabled"
+
+    # Default calm-state posture
+    return "Passive monitoring"
 
 
 def generate_normal_data():
@@ -222,24 +320,35 @@ def detect(metrics):
 
     workload_id = metrics.get("workload_id", "svc-1")
     isolation_status = "MONITORING"
-    response_action = "Monitoring only"
     isolation_event = None
 
     if tier == "HIGH":
         isolation_status = "QUARANTINED"
-        response_action = "Quarantine triggered"
-
         if not isolated_state["active"]:
             isolation_event = trigger_isolation(workload_id)
 
     elif isolated_state["active"] and tier in ["NORMAL", "LOW"]:
         isolation_status = "RECOVERED"
-        response_action = "Recovered to monitoring state"
         isolated_state["active"] = False
 
     # Threat propagation over the fixed service graph
     propagated = propagate_threat(workload_id, anomaly_score)
     blast_radius = estimate_blast_radius(propagated)
+
+    # Adaptive response strategy based on severity and potential spread
+    response_action = get_adaptive_response(tier, blast_radius)
+
+    # STRIDE-style threat classification based on simulated attack type
+    attack_type = metrics.get("attack_type", "NORMAL")
+    stride_info = STRIDE_MAP.get(
+        attack_type,
+        {
+            "stride": "Unknown",
+            "label": "Unknown",
+        },
+    )
+
+    dread = get_dread_assessment(attack_type)
 
     result = {
         **metrics,
@@ -252,11 +361,20 @@ def detect(metrics):
             "impacted_services": propagated,
             "blast_radius": blast_radius,
         },
+        "threat_classification": {
+            "stride": stride_info["stride"],
+            "label": stride_info["label"],
+        },
+        "dread_assessment": dread,
         "response_engine": {
-            "threat_detected": "YES" if tier in ["MEDIUM", "HIGH"] else "NO",
+            "threat_detected": "YES"
+            if (tier in ["MEDIUM", "HIGH"] or blast_radius in ["MEDIUM", "HIGH"])
+            else "NO",
             "confidence": tier,
             "action": response_action,
-            "scope": workload_id,
+            "scope": "Propagation containment zone" if blast_radius in ["MEDIUM", "HIGH"] else workload_id,
+            "strategy": "PROPAGATION_AWARE",
+            "blast_radius": blast_radius,
         },
         "isolation_event": isolation_event,
     }
@@ -341,7 +459,7 @@ def background_stream():
             metrics = generate_normal_data()
         result = detect(metrics)
         socketio.emit("update", result)
-        print("📡 Emitted:", result)
+        print("Emitted:", result)
         socketio.sleep(2)
 
 

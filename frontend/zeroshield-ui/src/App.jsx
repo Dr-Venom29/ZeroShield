@@ -136,6 +136,16 @@ export default function App() {
     }
   };
 
+  const formatStrategy = (strategy) => {
+    if (strategy === "PROPAGATION_AWARE") {
+      return "Propagation-Aware Defense";
+    }
+    if (!strategy || strategy === "STANDARD") {
+      return "Standard Defense";
+    }
+    return strategy;
+  };
+
   const getClusterStatus = (tier) => {
     switch (tier) {
       case "HIGH":
@@ -175,6 +185,22 @@ export default function App() {
       return "Anomalous combination of workload metrics pushed the risk score above the normal operating band.";
     }
     return null;
+  };
+
+  const dreadFactors = [
+    { key: "damage", label: "Damage" },
+    { key: "reproducibility", label: "Reproducibility" },
+    { key: "exploitability", label: "Exploitability" },
+    { key: "affected_users", label: "Affected Users" },
+    { key: "discoverability", label: "Discoverability" },
+  ];
+
+  const getDreadCellClass = (score) => {
+    if (score >= 8) return "dread-high";
+    if (score >= 6) return "dread-medium-high";
+    if (score >= 4) return "dread-medium";
+    if (score >= 2) return "dread-low";
+    return "dread-very-low";
   };
 
   return (
@@ -323,6 +349,75 @@ export default function App() {
                 </ResponsiveContainer>
               </div>
 
+              <section className="dread-card">
+                <div className="dread-header">
+                  <div>
+                    <h2>DREAD Heat Map</h2>
+                    <p className="subtle-label">
+                      Threat prioritization across DREAD risk factors
+                    </p>
+                  </div>
+
+                  <div className="dread-score-badge">
+                    <span className="score-label">Overall Risk</span>
+                    <span className="score-value">
+                      {data?.dread_assessment?.level || "LOW"} ({
+                        data?.dread_assessment?.score || 1
+                      }
+                      /10)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="dread-grid">
+                  {dreadFactors.map((factor) => {
+                    const score = data?.dread_assessment?.[factor.key] || 1;
+
+                    return (
+                      <div className="dread-row" key={factor.key}>
+                        <span className="dread-label">{factor.label}</span>
+
+                        <div className="dread-cells">
+                          {Array.from({ length: 10 }).map((_, idx) => {
+                            const active = idx < score;
+                            return (
+                              <div
+                                key={idx}
+                                className={`dread-cell ${
+                                  active
+                                    ? getDreadCellClass(score)
+                                    : "dread-inactive"
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        <span className="dread-score">{score}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="dread-legend">
+                  <span>
+                    <span className="legend-dot dread-high"></span> High (8–10)
+                  </span>
+                  <span>
+                    <span className="legend-dot dread-medium-high"></span> Medium-High (6–7)
+                  </span>
+                  <span>
+                    <span className="legend-dot dread-medium"></span> Medium (4–5)
+                  </span>
+                  <span>
+                    <span className="legend-dot dread-low"></span> Low (2–3)
+                  </span>
+                  <span>
+                    <span className="legend-dot dread-very-low"></span> Very Low (1)
+                  </span>
+                </div>
+              </section>
+
               <div className="timeline-card">
                 <h2>Threat Timeline</h2>
                 <p className="subtle-label">Narrative feed from recent detections</p>
@@ -408,6 +503,17 @@ export default function App() {
                           >
                             {data.response_engine?.confidence || data.tier}
                           </span>
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Threat Model (STRIDE)</span>
+                        <span className="value">
+                          {data.threat_classification?.stride || "N/A"}
+                          {data.threat_classification?.label && (
+                            <span className="context-text" style={{ marginLeft: "0.4rem" }}>
+                              {`(${data.threat_classification.label})`}
+                            </span>
+                          )}
                         </span>
                       </li>
                     </ul>
@@ -589,7 +695,10 @@ export default function App() {
                   const scope = data?.response_engine?.scope || data?.workload_id;
                   const actionText =
                     data?.response_engine?.action ||
-                    (threatDetected ? "Quarantine triggered" : "Monitoring only");
+                    (threatDetected ? "Workload isolation enforced" : "Passive monitoring");
+                  const strategy = formatStrategy(data?.response_engine?.strategy);
+                  const blastRadius =
+                    data?.response_engine?.blast_radius || data?.threat_graph?.blast_radius;
                   const responseColor = getResponseStateColor(data);
 
                   return (
@@ -615,6 +724,18 @@ export default function App() {
                         </span>
                       </li>
                       <li>
+                        <span className="label">Strategy</span>
+                        <span className="value">
+                          <span style={{ color: responseColor }}>{strategy}</span>
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Blast Radius</span>
+                        <span className="value">
+                          <span style={{ color: responseColor }}>{blastRadius}</span>
+                        </span>
+                      </li>
+                      <li>
                         <span className="label">Enforcement Scope</span>
                         <span className="value">
                           <span style={{ color: responseColor }}>{scope}</span>
@@ -627,17 +748,20 @@ export default function App() {
 
               <div className="alerts-card">
                 <h2>Recent Alerts</h2>
+                <p className="subtle-label">
+                  STRIDE: S = Spoofing 
+                  • T = Tampering • DoS = Denial of Service
+                </p>
                 <div className="alerts-list">
                   {[...history].reverse().map((item, idx) => (
                     <div className="alert-item" key={idx}>
                       <div>
                         <strong>{item.timestamp}</strong>
                         <p>
-                          {item.workload_id} • {" "}
-                          {(item.attack_type || "Normal Activity").replaceAll("_", " ")}
-                          {" "}• {" "}
-                          {item.attack_severity ? item.attack_severity.toUpperCase() : "N/A"}
-                          {" "}• Score: {Math.round(item.anomaly_score)}
+                          {item.workload_id} •{" "}
+                          {(item.attack_type || "Normal Activity").replaceAll("_", " ")} •{" "}
+                          {item.threat_classification?.stride || "N/A"} • Score:{" "}
+                          {Math.round(item.anomaly_score)}
                         </p>
                       </div>
                       <span

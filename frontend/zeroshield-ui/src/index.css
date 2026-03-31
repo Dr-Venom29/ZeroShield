@@ -731,6 +731,121 @@ h2 {
   font-variant-numeric: tabular-nums;
 }
 
+/* --- DREAD Heat Map --- */
+.dread-card {
+  margin-top: 22px;
+  padding: 22px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dread-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dread-score-badge {
+  text-align: right;
+}
+
+.score-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.score-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #f5f5f5;
+}
+
+.dread-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dread-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 30px;
+  align-items: center;
+  gap: 16px;
+}
+
+.dread-label {
+  font-size: 0.9rem;
+  color: #f5f5f5;
+  font-weight: 500;
+}
+
+.dread-cells {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 6px;
+}
+
+.dread-cell {
+  height: 28px;
+  border-radius: 7px;
+  transition: all 0.25s ease;
+}
+
+.dread-inactive {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dread-high {
+  background: #ff3b30;
+}
+
+.dread-medium-high {
+  background: #ff9500;
+}
+
+.dread-medium {
+  background: #facc15;
+}
+
+.dread-low {
+  background: #22c55e;
+}
+
+.dread-very-low {
+  background: #6b7280;
+}
+
+.dread-score {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f5f5f5;
+  text-align: right;
+}
+
+.dread-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 20px;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
 /* --- Alerts Card --- */
 .alerts-card h2 {
   margin-bottom: 0.5rem;
