@@ -278,7 +278,7 @@ export default function App() {
               <div className="isolation-card">
                 <h2>Workload Isolation Status</h2>
                 <p className="subtle-label">
-                  Target Workload: {data.workload_id}
+                  Primary Threat Node: {data.workload_id}
                 </p>
 
                 <div
@@ -360,7 +360,18 @@ export default function App() {
 
                   <div className="dread-score-badge">
                     <span className="score-label">Overall Risk</span>
-                    <span className="score-value">
+                    <span
+                      className="score-value"
+                      style={{
+                        color: (() => {
+                          const level = data?.dread_assessment?.level || "LOW";
+                          if (level === "CRITICAL") return "#ff3b3b";
+                          if (level === "HIGH") return "#ff9500";
+                          if (level === "MEDIUM") return "#facc15";
+                          return "#22c55e";
+                        })(),
+                      }}
+                    >
                       {data?.dread_assessment?.level || "LOW"} ({
                         data?.dread_assessment?.score || 1
                       }
@@ -430,22 +441,37 @@ export default function App() {
                         "_",
                         " "
                       );
-                      const severityLabel = item.attack_severity
-                        ? item.attack_severity.toUpperCase()
-                        : "NORMAL";
                       const tierLabel = item.tier;
                       const scoreLabel = Math.round(item.anomaly_score);
                       const workload = item.workload_id;
                       const isolation = item.isolation_status;
                       const action = item.response_engine?.action;
 
-                      let message;
+                      const stride = item.threat_classification?.stride || "N/A";
+                      const dreadLevel = item.dread_assessment?.level || "LOW";
+                      const dreadScore = item.dread_assessment?.score || 0;
+
+                      const isContainmentAction =
+                        (action && action.toLowerCase().includes("isolation")) ||
+                        isolation === "QUARANTINED";
+
+                      const lines = [];
+
                       if (item.attack_type) {
-                        message = `${workload} flagged ${attackLabel} (${severityLabel}) at score ${scoreLabel}.`;
+                        lines.push({
+                          type: "DETECTION",
+                          text: `${workload} flagged ${attackLabel} (${stride} • DREAD ${dreadLevel} ${dreadScore}) at score ${scoreLabel}`,
+                        });
                       } else if (tierLabel === "HIGH" || tierLabel === "MEDIUM") {
-                        message = `${workload} entered ${tierLabel} risk band (score ${scoreLabel}).`;
+                        lines.push({
+                          type: "DETECTION",
+                          text: `${workload} entered ${tierLabel} risk band (score ${scoreLabel})`,
+                        });
                       } else {
-                        message = `${workload} operating within normal band (score ${scoreLabel}).`;
+                        lines.push({
+                          type: "DETECTION",
+                          text: `${workload} operating within normal band (score ${scoreLabel})`,
+                        });
                       }
 
                       if (item.threat_graph?.impacted_services?.length) {
@@ -453,17 +479,54 @@ export default function App() {
                           .map((svc) => svc.service)
                           .join(", ");
                         const blast = item.threat_graph.blast_radius;
-                        message += ` Propagation risk towards ${impactedNames} (${blast} blast radius).`;
+                        lines.push({
+                          type: "PROPAGATION",
+                          text: `Propagation risk detected towards ${impactedNames} (${blast} blast radius)`,
+                        });
                       }
 
                       if (action || isolation) {
-                        message += ` Response: ${action || isolation}.`;
+                        lines.push({
+                          type: "RESPONSE",
+                          variant: isContainmentAction ? "active" : "passive",
+                          text: action || isolation,
+                        });
+                      }
+
+                      if (isolation === "RECOVERED") {
+                        lines.push({
+                          type: "RECOVERY",
+                          text: `${workload} recovered from isolation`,
+                        });
                       }
 
                       return (
                         <div className="timeline-item" key={idx}>
                           <span className="timeline-time">{item.timestamp}</span>
-                          <p className="timeline-text">{message}</p>
+                          <div className="timeline-text">
+                            {lines.map((line, lineIdx) => {
+                              let tagClass = "timeline-tag";
+                              if (line.type === "DETECTION") {
+                                tagClass += " timeline-tag-detection";
+                              } else if (line.type === "PROPAGATION") {
+                                tagClass += " timeline-tag-propagation";
+                              } else if (line.type === "RECOVERY") {
+                                tagClass += " timeline-tag-recovery";
+                              } else if (line.type === "RESPONSE") {
+                                tagClass +=
+                                  line.variant === "active"
+                                    ? " timeline-tag-response-active"
+                                    : " timeline-tag-response-passive";
+                              }
+
+                              return (
+                                <div key={lineIdx} className="timeline-line">
+                                  <span className={tagClass}>[{line.type}]</span>
+                                  <span className="timeline-line-text">{line.text}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}
@@ -514,6 +577,14 @@ export default function App() {
                               {`(${data.threat_classification.label})`}
                             </span>
                           )}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">DREAD Risk</span>
+                        <span className="value">
+                          {data.dread_assessment
+                            ? `${data.dread_assessment.level} (${data.dread_assessment.score}/10)`
+                            : "N/A"}
                         </span>
                       </li>
                     </ul>
@@ -695,7 +766,7 @@ export default function App() {
                   const scope = data?.response_engine?.scope || data?.workload_id;
                   const actionText =
                     data?.response_engine?.action ||
-                    (threatDetected ? "Workload isolation enforced" : "Passive monitoring");
+                    (threatDetected ? "Isolation enforced" : "Passive monitoring");
                   const strategy = formatStrategy(data?.response_engine?.strategy);
                   const blastRadius =
                     data?.response_engine?.blast_radius || data?.threat_graph?.blast_radius;

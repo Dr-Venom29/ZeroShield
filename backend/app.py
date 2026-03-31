@@ -219,7 +219,7 @@ def get_adaptive_response(tier, blast_radius):
 
     # High anomaly but limited spread
     if tier == "HIGH":
-        return "Workload isolation enforced"
+        return "Isolation enforced"
 
     # Medium anomaly + any non-minimal propagation risk
     if tier == "MEDIUM" and blast_radius in ["LOW", "MEDIUM", "HIGH"]:
